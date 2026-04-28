@@ -773,6 +773,9 @@
                     if (selectedClip) {
                         loopRegion = { start: selectedClip.start, end: selectedClip.end };
                         renderTimeline();
+                        setTimeout(() => {
+                            if (defineRegionBtn) defineRegionBtn.click();
+                        }, 50);
                     }
                     break;
                 case '[':

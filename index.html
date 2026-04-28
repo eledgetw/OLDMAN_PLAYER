@@ -355,6 +355,10 @@
                 
                 clipEl.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
+                    // 點擊片段時取消自定義區塊的高亮狀態
+                    activeRegionIndex = -1;
+                    renderRegions();
+
                     // 手動偵測雙擊，解決 renderTimeline 重構 DOM 導致原生 dblclick 失效的問題
                     const now = Date.now();
                     const isDoubleClick = (now - (clip.lastClick || 0)) < 300;
@@ -368,11 +372,19 @@
                     const targetSourceTime = (clip.sourceStart || 0) + (clickTime - clip.start);
                     video.currentTime = targetSourceTime;
 
-                    // 如果是雙擊且影片有切割，則框選整段；否則清除框選
+                    // 處理雙擊框選、Shift 兩點框選或重設。現在支援在藍色片段上進行 Shift+點擊 框選
                     if (isDoubleClick && clips.length > 1) {
                         loopRegion = { start: clip.start, end: clip.end };
+                        clickSelectStart = null; 
+                    } else if (e.shiftKey && clickSelectStart !== null) {
+                        loopRegion = {
+                            start: Math.min(clickSelectStart, clickTime),
+                            end: Math.max(clickSelectStart, clickTime)
+                        };
+                        clickSelectStart = null;
                     } else {
                         loopRegion = null;
+                        clickSelectStart = clickTime;
                     }
 
                     if (currentMode === 'A') {
@@ -446,9 +458,16 @@
                     clipEl.appendChild(canvas);
                 }
 
-                if (clip.track === 1 && track1) {
-                    track1.appendChild(clipEl);
-                } else if (track0) {
+                // 2) 在藍色影片區塊上方，用半透明的文字顯示用戶標示的名稱
+                const matchedRegion = customRegions.find(r => Math.abs(r.start - clip.start) < 0.1 && Math.abs(r.end - clip.end) < 0.1);
+                if (matchedRegion) {
+                    const label = document.createElement('div');
+                    label.className = "absolute top-1 left-2 text-white/40 font-bold text-[10px] pointer-events-none select-none truncate pr-2";
+                    label.textContent = matchedRegion.name;
+                    clipEl.appendChild(label);
+                }
+
+                if (track0) {
                     track0.appendChild(clipEl);
                 }
             });
@@ -486,6 +505,10 @@
         // 點擊背景：B模式背景切割 或 A模式兩點框選
         timelineBg.addEventListener('mousedown', (e) => {
             if (!duration) return;
+            // 點擊背景時取消自定義區塊的高亮狀態
+            activeRegionIndex = -1;
+            renderRegions();
+            
             const contentEl = document.getElementById('timeline-content');
             const rect = contentEl.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
@@ -718,6 +741,9 @@
                 case 'b':
                     setMode('B');
                     break;
+                case 'r':
+                    if (defineRegionBtn) defineRegionBtn.click();
+                    break;
                 case '[':
                     clips.forEach(c => c.selected = (c.end <= t + 0.1));
                     renderTimeline();
@@ -759,7 +785,6 @@
                         video.pause();
                     }
                     break;
-            break;
             }
         });
 
@@ -801,6 +826,7 @@
 
         // --- 區域命名與匯出功能 ---
         let customRegions = [];
+        let activeRegionIndex = -1;
 
         // 在 footer 加入一個容器供按鈕放置
         const footer = document.querySelector('footer');
@@ -812,14 +838,57 @@
         function renderRegions() {
             regionContainer.innerHTML = '';
             customRegions.forEach((reg, index) => {
+                const isActive = activeRegionIndex === index;
                 const btn = document.createElement('div');
-                btn.className = "bg-purple-600 px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-pointer hover:bg-purple-500";
-                btn.innerHTML = `${reg.name} <span class="text-purple-200 hover:text-white" onclick="event.stopPropagation(); customRegions.splice(${index},1); renderRegions();">x</span>`;
+                
+                // 啟用拖曳功能
+                btn.draggable = true;
+                btn.ondragstart = (e) => {
+                    e.dataTransfer.setData('text/plain', index);
+                    btn.style.opacity = '0.5';
+                };
+                btn.ondragover = (e) => {
+                    e.preventDefault();
+                    // 顯示黃色輔助線作為插入點提示
+                    btn.classList.add('border-l-yellow-400');
+                    btn.classList.remove('border-transparent');
+                };
+                btn.ondragleave = () => {
+                    btn.classList.add('border-transparent');
+                    btn.classList.remove('border-l-yellow-400');
+                };
+                btn.ondragend = () => renderRegions();
+                btn.ondrop = (e) => {
+                    e.preventDefault();
+                    btn.classList.add('border-transparent');
+                    btn.classList.remove('border-l-yellow-400');
+                    const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                    if (fromIdx !== index) {
+                        const [moved] = customRegions.splice(fromIdx, 1);
+                        customRegions.splice(index, 0, moved);
+                        // 同步更新高亮索引
+                        if (activeRegionIndex === fromIdx) {
+                            activeRegionIndex = index;
+                        } else if (activeRegionIndex > fromIdx && activeRegionIndex <= index) {
+                            activeRegionIndex--;
+                        } else if (activeRegionIndex < fromIdx && activeRegionIndex >= index) {
+                            activeRegionIndex++;
+                        }
+                        renderRegions();
+                        renderTimeline();
+                    }
+                };
+
+                // 預設加入透明左邊框 (border-l-4 border-transparent) 以防佈局跳動
+                btn.className = `px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-move transition-all border-l-4 border-transparent ${isActive ? 'bg-purple-400 ring-2 ring-white shadow-lg scale-105' : 'bg-purple-600 hover:bg-purple-500 opacity-80'}`;
+                btn.innerHTML = `${reg.name} <span class="text-purple-200 hover:text-white font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===index)activeRegionIndex=-1; renderRegions(); renderTimeline();">×</span>`;
                 btn.onclick = () => { 
+                    activeRegionIndex = index;
                     savedPlayTime = reg.start; 
                     video.currentTime = reg.start;
                     loopRegion = { start: reg.start, end: reg.end };
                     renderTimeline();
+                    renderRegions();
                 };
                 regionContainer.appendChild(btn);
             });

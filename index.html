@@ -355,6 +355,11 @@
                 
                 clipEl.addEventListener('mousedown', (e) => {
                     e.stopPropagation();
+                    // 手動偵測雙擊，解決 renderTimeline 重構 DOM 導致原生 dblclick 失效的問題
+                    const now = Date.now();
+                    const isDoubleClick = (now - (clip.lastClick || 0)) < 300;
+                    clip.lastClick = now;
+
                     const contentEl = document.getElementById('timeline-content');
                     const rect = contentEl.getBoundingClientRect();
                     const clickTime = ((e.clientX - rect.left) / rect.width) * maxTime;
@@ -362,7 +367,13 @@
                     savedPlayTime = clickTime;
                     const targetSourceTime = (clip.sourceStart || 0) + (clickTime - clip.start);
                     video.currentTime = targetSourceTime;
-                    loopRegion = null;
+
+                    // 如果是雙擊且影片有切割，則框選整段；否則清除框選
+                    if (isDoubleClick && clips.length > 1) {
+                        loopRegion = { start: clip.start, end: clip.end };
+                    } else {
+                        loopRegion = null;
+                    }
 
                     if (currentMode === 'A') {
                         if (!e.shiftKey) clips.forEach(c => c.selected = false);
@@ -374,12 +385,30 @@
                         splitClip(clip, clickTime);
                     }
                 });
+
+                clipEl.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    // 如果影片已被分割（片段數量大於 1），則框選該片段範圍並顯示循環區
+                    if (clips.length > 1) {
+                        loopRegion = { start: clip.start, end: clip.end };
+                        renderTimeline();
+                    }
+                });
+
+                clipEl.addEventListener('dblclick', (e) => {
+                    e.stopPropagation();
+                    // 如果影片已被分割（片段數量大於 1），則框選該片段範圍
+                    if (clips.length > 1) {
+                        loopRegion = { start: clip.start, end: clip.end };
+                        renderTimeline();
+                    }
+                });
                 
                 // 繪製音訊波形
                 if (waveformPeaks.length > 0 && duration > 0) {
                     const canvas = document.createElement('canvas');
                     // 放置於片段底部，高度佔四分之三，並取消透明度讓波形更實心
-                    canvas.className = "absolute bottom-0 left-0 w-full h-3/4 pointer-events-none";
+                    canvas.className = "absolute inset-x-0 bottom-8 w-full h-1/2 pointer-events-none";
                     const clipRatio = (clip.end - clip.start) / duration;
                     
                     // 動態計算當下實際的像素寬度，避免放大時模糊

@@ -1,4 +1,4 @@
-# OLDMAN'S Player (老人的播放器)
+# OLDMAN'S Instrument Practice Player
 
 OLDMAN'S Player is a lightweight, high-performance, browser-based video tool specifically engineered for music and vocal learners.
 
@@ -50,7 +50,7 @@ Note: Extremely long videos or 4K files may lead to longer initial loading times
 
 ---
 
-# OLDMAN'S Player (老人的播放器)
+# 老人的樂器練習播放器
 
 「老人的播放器」是一款專為音樂及歌唱學習者量身打造的輕量化、高效能網頁版影片工具。
 

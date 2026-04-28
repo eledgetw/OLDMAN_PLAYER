@@ -26,6 +26,8 @@
             <input type="file" id="import-input" accept=".json" class="hidden">
             <button id="export-btn" data-i18n="export" class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">匯出</button>
             <button id="import-btn" data-i18n="import" class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm" onclick="document.getElementById('import-input').click()">匯入</button>
+            <button id="undo-btn" class="p-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors" title="上一動 (Ctrl+Z)"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg></button>
+            <button id="redo-btn" class="p-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors" title="下一動 (Ctrl+Y)"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg></button>
             <button id="preview-toggle" class="p-2 rounded-lg bg-green-600 text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
         </div>
         <div id="speed-buttons" class="flex items-center gap-1 bg-gray-700 p-1 rounded-lg">
@@ -48,7 +50,7 @@
         </div>
     </main>
 
-    <footer class="h-48 bg-gray-800 border-t border-gray-700 flex flex-col select-none">
+    <footer class="h-44 bg-gray-800 border-t border-gray-700 flex flex-col select-none">
         <div class="p-2 bg-gray-900/50 text-xs text-gray-400 flex justify-between items-center overflow-x-auto whitespace-nowrap">
             <div class="flex gap-4">
                 <span><strong class="text-white">A</strong>: <span data-i18n="helpA">選取模式</span></span>
@@ -61,6 +63,7 @@
             </div>
             <div class="flex items-center gap-3 pr-4">
                 <button id="define-region-btn" data-i18n="defineRegion" class="bg-gray-700 hover:bg-gray-600 text-gray-300 hover:text-white px-2 py-1 rounded text-xs border border-gray-600 transition">定義區間</button>
+<button id="merge-clips-btn" class="bg-indigo-700 hover:bg-indigo-600 text-white px-2 py-1 rounded text-xs border border-indigo-500 ml-2 transition hidden">合併片段</button>
                 <button id="zoom-fit-btn" class="hover:text-white transition" data-i18n-title="zoomFit" title="一鍵填滿 (適應螢幕)">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                 </button>
@@ -74,12 +77,12 @@
             </div>
         </div>
 
-        <div id="timeline-container" class="flex-1 relative mx-4 my-4 bg-gray-700 rounded-lg cursor-crosshair overflow-x-auto overflow-y-hidden group">
+        <div id="timeline-container" class="flex-1 relative mx-4 mt-2 mb-0 bg-gray-700 rounded-lg cursor-crosshair overflow-x-auto overflow-y-hidden group">
             <div id="timeline-content" class="relative h-full w-full origin-left transition-all duration-75">
                 <div id="timeline-bg" class="absolute inset-0 z-0"></div>
                 
                 <div class="absolute top-4 bottom-1 left-0 right-0 border-t border-gray-600 border-dashed pointer-events-none opacity-50 z-0"></div>
-                <div id="clips-track" class="absolute top-2 h-28 left-0 right-0 z-10 pointer-events-none flex flex-col">
+                <div id="clips-track" class="absolute inset-0 z-10 pointer-events-none flex flex-col">
                     <div id="track-0" class="flex-1 relative pointer-events-none"></div>
                 </div>
 
@@ -139,14 +142,22 @@
             if (historyIndex < history.length - 1) {
                 history = history.slice(0, historyIndex + 1);
             }
-            history.push(JSON.parse(JSON.stringify(clips)));
+            history.push({
+                clips: JSON.parse(JSON.stringify(clips)),
+                regions: typeof customRegions !== 'undefined' ? JSON.parse(JSON.stringify(customRegions)) : []
+            });
             historyIndex++;
         }
 
         function undo() {
             if (historyIndex > 0) {
                 historyIndex--;
-                clips = JSON.parse(JSON.stringify(history[historyIndex]));
+                const state = history[historyIndex];
+                clips = JSON.parse(JSON.stringify(state.clips || state));
+                if (typeof customRegions !== 'undefined' && state.regions) {
+                    customRegions = JSON.parse(JSON.stringify(state.regions));
+                    renderRegions();
+                }
                 renderTimeline();
             }
         }
@@ -154,7 +165,12 @@
         function redo() {
             if (historyIndex < history.length - 1) {
                 historyIndex++;
-                clips = JSON.parse(JSON.stringify(history[historyIndex]));
+                const state = history[historyIndex];
+                clips = JSON.parse(JSON.stringify(state.clips || state));
+                if (typeof customRegions !== 'undefined' && state.regions) {
+                    customRegions = JSON.parse(JSON.stringify(state.regions));
+                    renderRegions();
+                }
                 renderTimeline();
             }
         }
@@ -419,15 +435,13 @@
                 // 繪製音訊波形
                 if (waveformPeaks.length > 0 && duration > 0) {
                     const canvas = document.createElement('canvas');
-                    // 放置於片段底部，高度佔四分之三，並取消透明度讓波形更實心
-                    canvas.className = "absolute inset-x-0 bottom-8 w-full h-1/2 pointer-events-none";
+                    // 改善：將 bottom-8 改為 bottom-1 並拉高比例，確保波形貼齊底部不被空白處遮擋
+                    canvas.className = "absolute inset-x-0 bottom-1 w-full h-3/4 pointer-events-none";
                     const clipRatio = (clip.end - clip.start) / duration;
                     
-                    // 動態計算當下實際的像素寬度，避免放大時模糊
                     const containerWidth = document.getElementById('timeline-container').clientWidth;
                     const currentZoom = parseFloat(document.getElementById('zoom-slider').value) || 1;
                     const expectedPixelWidth = containerWidth * currentZoom * clipRatio;
-                    // 限制畫布最大寬度至 16000 防止瀏覽器限制崩潰
                     canvas.width = Math.min(16000, Math.max(100, Math.floor(expectedPixelWidth)));
                     canvas.height = 80;
                     const ctx = canvas.getContext('2d');
@@ -439,18 +453,16 @@
                     if (clipPeaks.length > 0) {
                         const barWidth = canvas.width / clipPeaks.length;
                         clipPeaks.forEach((peak, i) => {
-                            // 稍微放大音量倍率 (1.5倍) 讓平時的波形也更明顯
                             const displayPeak = Math.min(peak * 1.5, 1.0);
                             const h = displayPeak * canvas.height;
-                            // 更鮮豔的對比色：超過 0.7 顯示漸層紅橘，平時顯示亮青色
                             if (displayPeak > 0.7) {
                                 const gradient = ctx.createLinearGradient(0, canvas.height - h, 0, canvas.height);
-                                gradient.addColorStop(0, '#FF3B30'); // 鮮豔紅
-                                gradient.addColorStop(0.2, '#FF9500'); // 鮮豔橘
-                                gradient.addColorStop(0.5, '#38BDF8'); // 亮青色
+                                gradient.addColorStop(0, '#FF3B30');
+                                gradient.addColorStop(0.2, '#FF9500');
+                                gradient.addColorStop(0.5, '#38BDF8');
                                 ctx.fillStyle = gradient;
                             } else {
-                                ctx.fillStyle = '#38BDF8'; // 亮青色
+                                ctx.fillStyle = '#38BDF8';
                             }
                             ctx.fillRect(i * barWidth, canvas.height - h, Math.max(1, barWidth - 0.5), h);
                         });
@@ -480,6 +492,17 @@
                 loopRegionEl.style.width = `${widthP}%`;
             } else {
                 loopRegionEl.classList.add('hidden');
+            }
+
+            // 2) 當多個片段被選取時，顯示合併按鈕
+            const mergeBtn = document.getElementById('merge-clips-btn');
+            if (mergeBtn) {
+                const selectedCount = clips.filter(c => c.selected).length;
+                if (selectedCount > 1) {
+                    mergeBtn.classList.remove('hidden');
+                } else {
+                    mergeBtn.classList.add('hidden');
+                }
             }
         }
 
@@ -548,6 +571,12 @@
                         start: Math.min(clickSelectStart, time),
                         end: Math.max(clickSelectStart, time)
                     };
+                    // 1) 在灰色區域 Shift+點擊時，同時選取該範圍內的所有片段
+                    clips.forEach(c => {
+                        if (c.start < loopRegion.end && c.end > loopRegion.start) {
+                            c.selected = true;
+                        }
+                    });
                     clickSelectStart = null;
                 } else {
                     clickSelectStart = time;
@@ -881,7 +910,7 @@
 
                 // 預設加入透明左邊框 (border-l-4 border-transparent) 以防佈局跳動
                 btn.className = `px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-move transition-all border-l-4 border-transparent ${isActive ? 'bg-purple-400 ring-2 ring-white shadow-lg scale-105' : 'bg-purple-600 hover:bg-purple-500 opacity-80'}`;
-                btn.innerHTML = `${reg.name} <span class="text-purple-200 hover:text-white font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===index)activeRegionIndex=-1; renderRegions(); renderTimeline();">×</span>`;
+                btn.innerHTML = `${reg.name} <span class="text-purple-200 hover:text-white font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===${index})activeRegionIndex=-1; saveState(); renderRegions(); renderTimeline();">×</span>`;
                 btn.onclick = () => { 
                     activeRegionIndex = index;
                     savedPlayTime = reg.start; 
@@ -901,6 +930,7 @@
             const name = prompt(i18nData[currentLang].promptRegion, i18nData[currentLang].promptRegionDefault);
             if (name) {
                 customRegions.push({ name, start: loopRegion.start, end: loopRegion.end });
+                saveState();
                 renderRegions();
             }
         });
@@ -916,9 +946,41 @@
                 const name = prompt(i18nData[currentLang].promptRegion, i18nData[currentLang].promptRegionDefault + (customRegions.length + 1));
                 if (name) {
                     customRegions.push({ name, start: loopRegion.start, end: loopRegion.end });
+                    saveState();
                     renderRegions();
+                    renderTimeline();
                 }
             });
+        }
+
+        // 2) 拼接片段邏輯：合併為單一完整物件，徹底消除視覺縫隙，時長為片段完美相加
+        const mergeClipsBtn = document.getElementById('merge-clips-btn');
+        if (mergeClipsBtn) {
+            mergeClipsBtn.onclick = () => {
+                const selected = clips.filter(c => c.selected).sort((a, b) => a.start - b.start);
+                if (selected.length < 2) return;
+
+                const newStart = selected[0].start;
+                // 精準加總所有片段的實際時長，確保總長度絕對不縮短也不增加
+                const totalDuration = selected.reduce((sum, clip) => sum + (clip.end - clip.start), 0);
+                const newEnd = newStart + totalDuration;
+                const newSourceStart = selected[0].sourceStart;
+
+                // 自動清理對應的自定義區塊 (恢復原本正確的清理邏輯)
+                customRegions = customRegions.filter(reg => 
+                    !selected.some(c => Math.abs(reg.start - c.start) < 0.1 && Math.abs(reg.end - c.end) < 0.1)
+                );
+
+                // 刪除原本的碎片段，直接合併成一個全新的完整物件，徹底消除中間的縫隙
+                clips = clips.filter(c => !c.selected);
+                clips.push({ id: Date.now(), start: newStart, end: newEnd, sourceStart: newSourceStart, selected: true, track: selected[0].track || 0 });
+                clips.sort((a, b) => a.start - b.start);
+                
+                loopRegion = null;
+                saveState();
+                renderTimeline();
+                renderRegions();
+            };
         }
 
         // 匯出功能

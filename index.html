@@ -768,6 +768,13 @@
                 case 'r':
                     if (defineRegionBtn) defineRegionBtn.click();
                     break;
+                case '`':
+                    const selectedClip = clips.find(c => c.selected);
+                    if (selectedClip) {
+                        loopRegion = { start: selectedClip.start, end: selectedClip.end };
+                        renderTimeline();
+                    }
+                    break;
                 case '[':
                     clips.forEach(c => c.selected = (c.end <= t + 0.1));
                     renderTimeline();

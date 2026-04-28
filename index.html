@@ -50,7 +50,9 @@
         </div>
     </main>
 
-    <footer class="h-44 bg-gray-800 border-t border-gray-700 flex flex-col select-none">
+    <div id="resizer" class="h-2 bg-gray-700 hover:bg-blue-500 cursor-row-resize flex-none z-40 transition-colors" title="上下拖曳調整大小"></div>
+
+    <footer id="editor-footer" class="bg-gray-800 border-t border-gray-700 flex flex-col select-none" style="height: 176px;">
         <div class="p-2 bg-gray-900/50 text-xs text-gray-400 flex justify-between items-center overflow-x-auto whitespace-nowrap">
             <div class="flex gap-4">
                 <span><strong class="text-white">A</strong>: <span data-i18n="helpA">選取模式</span></span>
@@ -389,9 +391,20 @@
                     video.currentTime = targetSourceTime;
 
                     // 處理雙擊框選、Shift 兩點框選或重設。現在支援在藍色片段上進行 Shift+點擊 框選
-                    if (isDoubleClick && clips.length > 1) {
+                    if (isDoubleClick) {
                         loopRegion = { start: clip.start, end: clip.end };
                         clickSelectStart = null; 
+                        
+                        // 使用 setTimeout 讓畫面先渲染出綠色選取框，再跳出輸入視窗
+                        setTimeout(() => {
+                            const name = prompt(i18nData[currentLang].promptRegion, i18nData[currentLang].promptRegionDefault + (customRegions.length + 1));
+                            if (name) {
+                                customRegions.push({ name, start: loopRegion.start, end: loopRegion.end });
+                                saveState();
+                                renderRegions();
+                                renderTimeline();
+                            }
+                        }, 50);
                     } else if (e.shiftKey && clickSelectStart !== null) {
                         loopRegion = {
                             start: Math.min(clickSelectStart, clickTime),
@@ -411,24 +424,6 @@
                         renderTimeline();
                     } else if (currentMode === 'B') {
                         splitClip(clip, clickTime);
-                    }
-                });
-
-                clipEl.addEventListener('dblclick', (e) => {
-                    e.stopPropagation();
-                    // 如果影片已被分割（片段數量大於 1），則框選該片段範圍並顯示循環區
-                    if (clips.length > 1) {
-                        loopRegion = { start: clip.start, end: clip.end };
-                        renderTimeline();
-                    }
-                });
-
-                clipEl.addEventListener('dblclick', (e) => {
-                    e.stopPropagation();
-                    // 如果影片已被分割（片段數量大於 1），則框選該片段範圍
-                    if (clips.length > 1) {
-                        loopRegion = { start: clip.start, end: clip.end };
-                        renderTimeline();
                     }
                 });
                 
@@ -1115,6 +1110,40 @@
                 btnTw.className = "px-3 py-1 text-sm text-gray-300 hover:bg-gray-600 font-bold transition-colors";
             }
         }
+
+        // --- 調整下方編輯區高度功能 ---
+        const resizer = document.getElementById('resizer');
+        const editorFooter = document.getElementById('editor-footer');
+        let isResizingArea = false;
+
+        resizer.addEventListener('mousedown', (e) => {
+            isResizingArea = true;
+            document.body.style.cursor = 'row-resize';
+            document.body.style.userSelect = 'none'; // 防止拖曳時反白選取到文字
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizingArea) return;
+            
+            // 計算新的高度：視窗總高度 - 目前滑鼠的 Y 座標
+            let newHeight = window.innerHeight - e.clientY;
+            
+            // 設定最小高度與最大高度限制，避免將上方影片或下方介面壓扁破版
+            if (newHeight < 100) newHeight = 100; 
+            if (newHeight > window.innerHeight - 150) newHeight = window.innerHeight - 150;
+            
+            editorFooter.style.height = newHeight + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizingArea) {
+                isResizingArea = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                // 調整完畢後重新渲染時間軸確保波形與元素正確貼合
+                if (duration) renderTimeline(); 
+            }
+        });
 
     </script>
 </body>

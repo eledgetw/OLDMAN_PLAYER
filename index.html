@@ -41,7 +41,14 @@
     </header>
 
     <main class="flex-1 min-h-0 flex justify-center items-center bg-black relative p-4">
-        <video id="video-player" class="max-h-full max-w-full rounded shadow-lg object-contain transition-opacity duration-200" playsinline></video>
+        <video id="video-player" class="max-h-full max-w-full rounded shadow-lg object-contain transition-opacity duration-200 cursor-pointer" playsinline></video>
+        
+        <div id="play-pause-overlay" class="absolute inset-0 flex items-center justify-center pointer-events-none z-50 opacity-0 transition-opacity duration-300">
+            <div class="bg-black/60 rounded-full p-6 text-white transform scale-150 transition-transform duration-300 flex items-center justify-center w-24 h-24">
+                <svg id="play-pause-icon" class="w-12 h-12" fill="currentColor" viewBox="0 0 24 24"></svg>
+            </div>
+        </div>
+
         <div id="mode-indicator" class="absolute top-4 left-4 bg-gray-800/80 text-white px-3 py-1 rounded text-sm backdrop-blur-sm hidden font-mono">
             <span data-i18n="modeLabel">當前模式:</span> <span id="current-mode-text" class="text-blue-400 font-bold" data-i18n="modeA">選取 (A)</span>
         </div>
@@ -115,6 +122,45 @@
         const redoBtn = document.getElementById('redo-btn');
         const hoverLine = document.getElementById('hover-line');
         const speedToast = document.getElementById('speed-toast');
+        const playPauseOverlay = document.getElementById('play-pause-overlay');
+        const playPauseIcon = document.getElementById('play-pause-icon');
+        let playPauseTimer = null;
+
+        // 影片點擊播放/暫停事件
+        video.addEventListener('click', () => {
+            if (!duration) return;
+            
+            if (video.paused) {
+                lastSysTime = performance.now(); // 重置虛擬引擎計時器避免暴衝
+                let targetSourceTime = savedPlayTime;
+                for (let c of clips) {
+                    if (savedPlayTime >= c.start && savedPlayTime < c.end) {
+                        targetSourceTime = (c.sourceStart || 0) + (savedPlayTime - c.start);
+                        break;
+                    }
+                }
+                video.currentTime = targetSourceTime;
+                video.play();
+                // 顯示播放圖示 (三角形)
+                playPauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+            } else {
+                video.pause();
+                // 顯示暫停圖示 (雙直線)
+                playPauseIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+            }
+            
+            // 觸發動畫
+            playPauseOverlay.classList.remove('opacity-0');
+            playPauseOverlay.firstElementChild.classList.remove('scale-150');
+            playPauseOverlay.firstElementChild.classList.add('scale-100');
+            
+            clearTimeout(playPauseTimer);
+            playPauseTimer = setTimeout(() => {
+                playPauseOverlay.classList.add('opacity-0');
+                playPauseOverlay.firstElementChild.classList.remove('scale-100');
+                playPauseOverlay.firstElementChild.classList.add('scale-150');
+            }, 500);
+        });
 
         // 應用程式狀態
         let duration = 0;
@@ -895,9 +941,25 @@
                         }
                         video.currentTime = targetSourceTime;
                         video.play();
+                        // 顯示播放圖示 (三角形)
+                        playPauseIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
                     } else {
                         video.pause();
+                        // 顯示暫停圖示 (雙直線)
+                        playPauseIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
                     }
+                    
+                    // 觸發動畫
+                    playPauseOverlay.classList.remove('opacity-0');
+                    playPauseOverlay.firstElementChild.classList.remove('scale-150');
+                    playPauseOverlay.firstElementChild.classList.add('scale-100');
+                    
+                    clearTimeout(playPauseTimer);
+                    playPauseTimer = setTimeout(() => {
+                        playPauseOverlay.classList.add('opacity-0');
+                        playPauseOverlay.firstElementChild.classList.remove('scale-100');
+                        playPauseOverlay.firstElementChild.classList.add('scale-150');
+                    }, 500);
                     break;
             }
         });
@@ -1003,6 +1065,11 @@
                     loopRegion = { start: reg.start, end: reg.end };
                     renderTimeline();
                     renderRegions();
+                    
+                    // 自動平滑捲動到該區間的位置，減去 50px 是為了讓左側保留一點視覺空間避免貼齊邊緣
+                    const maxTime = Math.max(duration, ...clips.map(c => c.end));
+                    const contentWidth = document.getElementById('timeline-content').scrollWidth;
+                    timelineContainer.scrollTo({ left: (reg.start / maxTime) * contentWidth - 50, behavior: 'smooth' });
                 };
                 regionContainer.appendChild(btn);
             });

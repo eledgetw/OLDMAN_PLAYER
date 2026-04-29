@@ -221,10 +221,14 @@
             reader.readAsArrayBuffer(file);
         }
 
+        let currentVideoName = '';
+        let pendingImportData = null;
+
         // 載入影片
         upload.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
+            currentVideoName = file.name;
             const url = URL.createObjectURL(file);
             video.src = url;
             video.load();
@@ -240,6 +244,7 @@
             e.preventDefault();
             const file = e.dataTransfer.files[0];
             if (!file || !file.type.startsWith('video/')) return;
+            currentVideoName = file.name;
             const url = URL.createObjectURL(file);
             video.src = url;
             video.load();
@@ -250,9 +255,16 @@
         video.addEventListener('loadedmetadata', () => {
             const initVideoData = () => {
                 duration = video.duration;
-                // 真正的 NLE 架構：區分時間軸時間 (start/end) 與原始影片時間 (sourceStart)
-                clips = [{ id: Date.now(), start: 0, end: duration, sourceStart: 0, selected: false, track: 0 }];
-                loopRegion = null;
+                
+                if (pendingImportData) {
+                    clips = pendingImportData.clips;
+                    loopRegion = null;
+                    pendingImportData = null;
+                } else {
+                    // 真正的 NLE 架構：區分時間軸時間 (start/end) 與原始影片時間 (sourceStart)
+                    clips = [{ id: Date.now(), start: 0, end: duration, sourceStart: 0, selected: false, track: 0 }];
+                    loopRegion = null;
+                }
                 modeIndicator.classList.remove('hidden');
                 
                 history = [];
@@ -518,6 +530,9 @@
             clips.splice(idx, 1, clip1, clip2);
             saveState(); // 紀錄分割
             renderTimeline();
+            
+            // 成功分割後自動跳回 A 模式
+            setMode('A');
         }
 
         // 點擊背景：B模式背景切割 或 A模式兩點框選
@@ -736,6 +751,59 @@
             // 避免焦點在 input 時觸發快捷鍵
             if (e.target.tagName.toLowerCase() === 'input') return;
 
+            // 處理自定義區塊的左右切換與順序對調
+            if (activeRegionIndex !== -1 && customRegions.length > 0) {
+                if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    if (e.metaKey || e.ctrlKey) {
+                        if (activeRegionIndex > 0) {
+                            const temp = customRegions[activeRegionIndex];
+                            customRegions[activeRegionIndex] = customRegions[activeRegionIndex - 1];
+                            customRegions[activeRegionIndex - 1] = temp;
+                            activeRegionIndex--;
+                            saveState();
+                            renderRegions();
+                            renderTimeline();
+                        }
+                    } else {
+                        if (activeRegionIndex > 0) {
+                            activeRegionIndex--;
+                            const reg = customRegions[activeRegionIndex];
+                            savedPlayTime = reg.start; 
+                            video.currentTime = reg.start;
+                            loopRegion = { start: reg.start, end: reg.end };
+                            renderTimeline();
+                            renderRegions();
+                        }
+                    }
+                    return;
+                } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    if (e.metaKey || e.ctrlKey) {
+                        if (activeRegionIndex < customRegions.length - 1) {
+                            const temp = customRegions[activeRegionIndex];
+                            customRegions[activeRegionIndex] = customRegions[activeRegionIndex + 1];
+                            customRegions[activeRegionIndex + 1] = temp;
+                            activeRegionIndex++;
+                            saveState();
+                            renderRegions();
+                            renderTimeline();
+                        }
+                    } else {
+                        if (activeRegionIndex < customRegions.length - 1) {
+                            activeRegionIndex++;
+                            const reg = customRegions[activeRegionIndex];
+                            savedPlayTime = reg.start; 
+                            video.currentTime = reg.start;
+                            loopRegion = { start: reg.start, end: reg.end };
+                            renderTimeline();
+                            renderRegions();
+                        }
+                    }
+                    return;
+                }
+            }
+
             // Undo / Redo 快捷鍵 (Cmd/Ctrl + Z / Y)
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
                 e.preventDefault();
@@ -745,6 +813,18 @@
             if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
                 e.preventDefault();
                 redo();
+                return;
+            }
+
+            // 存檔與載入快捷鍵 (Cmd/Ctrl + S / L)
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                document.getElementById('export-btn').click();
+                return;
+            }
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
+                e.preventDefault();
+                document.getElementById('import-input').click();
                 return;
             }
 
@@ -990,7 +1070,7 @@
 
         // 匯出功能
         document.getElementById('export-btn').addEventListener('click', () => {
-            const data = JSON.stringify({ clips, customRegions });
+            const data = JSON.stringify({ videoName: currentVideoName, clips, customRegions });
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1005,11 +1085,29 @@
             const reader = new FileReader();
             reader.onload = (event) => {
                 const data = JSON.parse(event.target.result);
-                clips = data.clips;
                 customRegions = data.customRegions || [];
-                saveState();
-                renderTimeline();
                 renderRegions();
+                
+                if (data.videoName) {
+                    currentVideoName = data.videoName;
+                    pendingImportData = data;
+                    
+                    // 改回系統彈出視窗，確保用戶點擊確認後才觸發選擇檔案
+                    setTimeout(() => {
+                        alert(`請選擇對應的影片檔 / Please select the corresponding video file:\n\n👉 ${data.videoName}`);
+                        // 直接呼叫畫面上方的「載入影片」按鈕功能
+                        document.getElementById('video-upload').click();
+                        // 修正匯入後 input 的值，避免下次匯入同一個 JSON 沒反應
+                        document.getElementById('import-input').value = '';
+                    }, 50);
+
+                } else {
+                    clips = data.clips;
+                    saveState();
+                    renderTimeline();
+                    
+                    document.getElementById('import-input').value = '';
+                }
             };
             reader.readAsText(file);
         });

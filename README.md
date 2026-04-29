@@ -4,7 +4,10 @@ OLDMAN'S Player is a lightweight, high-performance, browser-based video tool spe
 
 The project was born out of a real-world frustration: the struggle of mastering complex musical pieces, such as fingerstyle guitar arrangements. Traditional video platforms like YouTube make it incredibly difficult to focus on a specific 5-second riff, slow down the tempo without losing audio clarity, or visualize the rhythm of a percussive technique. This player solves those pain points by providing a non-linear timeline (NLE) experience directly in your browser.
 
----
+## 🚀 Live Demo
+
+[### Click Me ###](https://eledgetw.github.io/OLDMAN_PLAYER/)
+
 
 ## 🎸 Why use this?
 When mastering an instrument, repetition and precision are everything. OLDMAN'S Player allows you to strip away the distractions and focus on the music:
@@ -61,7 +64,9 @@ Note: Extremely long videos may lead to longer initial loading times while the 1
 
 本專案源於一個真實的困擾：在練習複雜的樂曲（如指彈吉他）時，傳統影片平台的限制。無論是想反覆練習一段 5 秒鐘的過門、在不影響音質的情況下放慢速度，或是視覺化觀察節奏，YouTube 等平台都難以滿足需求。這款播放器透過在瀏覽器中直接提供非線性剪輯 (NLE) 的時間軸體驗，徹底解決了這些痛點。
 
----
+## 🚀 Live Demo
+
+[### 點我點我 ###](https://eledgetw.github.io/OLDMAN_PLAYER/)
 
 ## 🎸 為什麼選擇這個工具？
 練習樂器時，精準的重複是進步的關鍵。老人的播放器讓您可以排除干擾，專注於音樂本身：

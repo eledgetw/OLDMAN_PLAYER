@@ -62,11 +62,11 @@
     <footer id="editor-footer" class="bg-gray-800 border-t border-gray-700 flex flex-col select-none" style="height: 176px;">
         <div class="p-2 bg-gray-900/50 text-xs text-gray-400 flex justify-between items-center overflow-x-auto whitespace-nowrap">
             <div class="flex gap-4">
-                <span><strong class="text-white">A</strong>: <span data-i18n="helpA">選取模式</span></span>
-                <span><strong class="text-white">B</strong>: <span data-i18n="helpB">分割模式</span></span>
-                <span><strong class="text-white">[</strong>: <span data-i18n="helpL">左全選</span></span>
-                <span><strong class="text-white">]</strong>: <span data-i18n="helpR">右全選</span></span>
-                <span><strong class="text-white">Del/Backspace</strong>: <span data-i18n="helpDel">刪除</span></span>
+                <button type="button" onclick="setMode('A')" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">A</strong>: <span data-i18n="helpA">選取模式</span></button>
+                <button type="button" onclick="setMode('B')" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">B</strong>: <span data-i18n="helpB">分割模式</span></button>
+                <button type="button" onclick="const t = video.currentTime; clips.forEach(c => c.selected = (c.end <= t + 0.1)); renderTimeline();" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">[</strong>: <span data-i18n="helpL">左全選</span></button>
+                <button type="button" onclick="const t = video.currentTime; clips.forEach(c => c.selected = (c.start >= t - 0.1)); renderTimeline();" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">]</strong>: <span data-i18n="helpR">右全選</span></button>
+                <button type="button" onclick="const originalLength = clips.length; clips = clips.filter(c => !c.selected); if (clips.length !== originalLength) { loopRegion = null; saveState(); renderTimeline(); }" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">Del/Backspace</strong>: <span data-i18n="helpDel">刪除</span></button>
                 <span><strong class="text-white" data-i18n="keyShift">Shift+點擊</strong>: <span data-i18n="helpShift">兩點框選</span></span>
                 <span><strong class="text-white" data-i18n="keySpace">空白鍵</strong>: <span data-i18n="helpSpace">播放/暫停</span></span>
             </div>
@@ -1076,6 +1076,11 @@
                     loopRegion = { start: reg.start, end: reg.end };
                     renderTimeline();
                     renderRegions();
+                    
+                    // === 新增：確保按下區間後自動播放 ===
+                    if (video.paused) {
+                        video.play();
+                    }
                     
                     // 自動平滑捲動到該區間的位置，減去 50px 是為了讓左側保留一點視覺空間避免貼齊邊緣
                     const maxTime = Math.max(duration, ...clips.map(c => c.end));

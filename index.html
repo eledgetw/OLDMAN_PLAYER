@@ -12,7 +12,7 @@
         .clip-segment.selected { border: 2px solid #3b82f6; background-color: rgba(59, 130, 246, 0.5); }
     </style>
 </head>
-<body class="bg-gray-900 text-white h-screen flex flex-col overflow-hidden font-sans">
+<body class="bg-gray-900 text-white h-[100dvh] flex flex-col overflow-hidden font-sans pb-2">
 
     <!-- 頂部導覽與控制區 -->
     <header class="bg-gray-800 p-4 flex flex-wrap gap-4 items-center border-b border-gray-700 shadow-md z-10">
@@ -1055,9 +1055,20 @@
                     }
                 };
 
+                // 檢查此區間是否被完全包含在另一個更大的區間中
+                const isContained = customRegions.some((other, i) => index !== i && reg.start >= other.start && reg.end <= other.end && (other.end - other.start) > (reg.end - reg.start));
+                
+                const bgClass = isContained 
+                    ? (isActive ? 'bg-yellow-400 ring-2 ring-white shadow-lg scale-105 text-gray-900' : 'bg-yellow-600 hover:bg-yellow-500 opacity-80 text-white')
+                    : (isActive ? 'bg-purple-400 ring-2 ring-white shadow-lg scale-105' : 'bg-purple-600 hover:bg-purple-500 opacity-80');
+                    
+                const closeClass = isContained 
+                    ? (isActive ? 'text-gray-600 hover:text-gray-900' : 'text-yellow-200 hover:text-white')
+                    : 'text-purple-200 hover:text-white';
+
                 // 預設加入透明左邊框 (border-l-4 border-transparent) 以防佈局跳動
-                btn.className = `px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-move transition-all border-l-4 border-transparent ${isActive ? 'bg-purple-400 ring-2 ring-white shadow-lg scale-105' : 'bg-purple-600 hover:bg-purple-500 opacity-80'}`;
-                btn.innerHTML = `${reg.name} <span class="text-purple-200 hover:text-white font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===${index})activeRegionIndex=-1; saveState(); renderRegions(); renderTimeline();">×</span>`;
+                btn.className = `px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-move transition-all border-l-4 border-transparent ${bgClass}`;
+                btn.innerHTML = `${reg.name} <span class="${closeClass} font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===${index})activeRegionIndex=-1; saveState(); renderRegions(); renderTimeline();">×</span>`;
                 btn.onclick = () => { 
                     activeRegionIndex = index;
                     savedPlayTime = reg.start; 
@@ -1291,26 +1302,29 @@
         const editorFooter = document.getElementById('editor-footer');
         let isResizingArea = false;
 
-        resizer.addEventListener('mousedown', (e) => {
+        function startResize(e) {
             isResizingArea = true;
             document.body.style.cursor = 'row-resize';
             document.body.style.userSelect = 'none'; // 防止拖曳時反白選取到文字
-        });
+        }
 
-        document.addEventListener('mousemove', (e) => {
+        function doResize(e) {
             if (!isResizingArea) return;
             
-            // 計算新的高度：視窗總高度 - 目前滑鼠的 Y 座標
-            let newHeight = window.innerHeight - e.clientY;
+            // 支援滑鼠與觸控的 Y 座標取得
+            const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+            
+            // 計算新的高度：視窗總高度 - 目前的 Y 座標
+            let newHeight = window.innerHeight - clientY;
             
             // 設定最小高度與最大高度限制，避免將上方影片或下方介面壓扁破版
             if (newHeight < 100) newHeight = 100; 
             if (newHeight > window.innerHeight - 150) newHeight = window.innerHeight - 150;
             
             editorFooter.style.height = newHeight + 'px';
-        });
+        }
 
-        document.addEventListener('mouseup', () => {
+        function stopResize() {
             if (isResizingArea) {
                 isResizingArea = false;
                 document.body.style.cursor = '';
@@ -1318,7 +1332,16 @@
                 // 調整完畢後重新渲染時間軸確保波形與元素正確貼合
                 if (duration) renderTimeline(); 
             }
-        });
+        }
+
+        resizer.addEventListener('mousedown', startResize);
+        resizer.addEventListener('touchstart', startResize, { passive: true });
+
+        document.addEventListener('mousemove', doResize);
+        document.addEventListener('touchmove', doResize, { passive: true });
+
+        document.addEventListener('mouseup', stopResize);
+        document.addEventListener('touchend', stopResize);
 
     </script>
 </body>

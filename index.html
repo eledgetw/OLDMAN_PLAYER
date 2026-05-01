@@ -64,9 +64,9 @@
             <div class="flex gap-4">
                 <button type="button" onclick="setMode('A')" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">A</strong>: <span data-i18n="helpA">選取模式</span></button>
                 <button type="button" onclick="setMode('B')" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">B</strong>: <span data-i18n="helpB">分割模式</span></button>
-                <button type="button" onclick="const t = video.currentTime; clips.forEach(c => c.selected = (c.end <= t + 0.1)); renderTimeline();" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">[</strong>: <span data-i18n="helpL">左全選</span></button>
-                <button type="button" onclick="const t = video.currentTime; clips.forEach(c => c.selected = (c.start >= t - 0.1)); renderTimeline();" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">]</strong>: <span data-i18n="helpR">右全選</span></button>
-                <button type="button" onclick="const originalLength = clips.length; clips = clips.filter(c => !c.selected); if (clips.length !== originalLength) { loopRegion = null; saveState(); renderTimeline(); }" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">Del/Backspace</strong>: <span data-i18n="helpDel">刪除</span></button>
+                <button type="button" onclick="clips.forEach(c => c.selected = (c.end <= video.currentTime + 0.1)); renderTimeline();" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">[</strong>: <span data-i18n="helpL">左全選</span></button>
+                <button type="button" onclick="clips.forEach(c => c.selected = (c.start >= video.currentTime - 0.1)); renderTimeline();" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">]</strong>: <span data-i18n="helpR">右全選</span></button>
+                <button type="button" onclick="if(clips.some(c => c.selected)){ clips = clips.filter(c => !c.selected); loopRegion = null; saveState(); renderTimeline(); }" class="cursor-pointer hover:text-white transition-colors text-left"><strong class="text-white">Del/Backspace</strong>: <span data-i18n="helpDel">刪除</span></button>
                 <span><strong class="text-white" data-i18n="keyShift">Shift+點擊</strong>: <span data-i18n="helpShift">兩點框選</span></span>
                 <span><strong class="text-white" data-i18n="keySpace">空白鍵</strong>: <span data-i18n="helpSpace">播放/暫停</span></span>
             </div>
@@ -77,11 +77,11 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
                 </button>
                 <button id="zoom-out-btn" class="hover:text-white transition" data-i18n-title="zoomOut" title="縮小">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"></path></svg>
                 </button>
-                <input type="range" id="zoom-slider" min="1" max="10" step="0.1" value="1" class="w-24 accent-blue-500">
+                <input type="range" id="zoom-slider" min="1" max="10" step="0.1" value="1" class="w-40 accent-blue-500">
                 <button id="zoom-in-btn" class="hover:text-white transition" data-i18n-title="zoomIn" title="放大">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7M10 10V7m0 0v3m0-3h3m-3 0H7" style="display:none;"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
                 </button>
             </div>
         </div>
@@ -1151,20 +1151,87 @@
             };
         }
 
-        // 匯出功能
-        document.getElementById('export-btn').addEventListener('click', () => {
+        let currentFileHandle = null;
+        let currentJsonName = 'project.json';
+
+        // 匯出功能 (支援覆蓋原檔)
+        document.getElementById('export-btn').addEventListener('click', async () => {
             const data = JSON.stringify({ videoName: currentVideoName, clips, customRegions });
+            
+            // 檢查瀏覽器是否支援 File System Access API
+            if ('showSaveFilePicker' in window) {
+                try {
+                    // 若尚未取得檔案權限，則跳出選擇視窗 (自動帶入原檔名)
+                    if (!currentFileHandle) {
+                        currentFileHandle = await window.showSaveFilePicker({
+                            suggestedName: currentJsonName,
+                            types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]
+                        });
+                        currentJsonName = currentFileHandle.name; // 紀錄使用者最終決定的檔名
+                    }
+                    const writable = await currentFileHandle.createWritable();
+                    await writable.write(data);
+                    await writable.close();
+                    
+                    // 顯示畫面輕量提示
+                    if (speedToast) {
+                        speedToast.textContent = '存檔成功';
+                        speedToast.classList.remove('opacity-0');
+                        clearTimeout(speedToastTimer);
+                        speedToastTimer = setTimeout(() => { speedToast.classList.add('opacity-0'); }, 2000);
+                    }
+                } catch (err) {
+                    if (err.name !== 'AbortError') fallbackDownload(data); 
+                }
+            } else {
+                fallbackDownload(data); 
+            }
+        });
+
+        function fallbackDownload(data) {
             const blob = new Blob([data], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'project.json';
+            a.download = currentJsonName; // 確保傳統下載模式也能帶入原檔名
             a.click();
-        });
+        }
 
-        // 匯入功能
+        // 攔截原本按鈕的點擊事件，改用現代 API 取得檔案讀寫權限
+        const importBtn = document.getElementById('import-btn');
+        if (importBtn) {
+            importBtn.removeAttribute('onclick'); 
+            importBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                if ('showOpenFilePicker' in window) {
+                    try {
+                        const [handle] = await window.showOpenFilePicker({
+                            types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]
+                        });
+                        currentFileHandle = handle; 
+                        currentJsonName = handle.name; // 載入時記憶原檔名
+                        const file = await handle.getFile();
+                        processImportedFile(file);
+                    } catch (err) {
+                        if (err.name !== 'AbortError') console.error(err);
+                    }
+                } else {
+                    document.getElementById('import-input').click(); 
+                }
+            });
+        }
+
+        // 匯入功能 (供舊版瀏覽器平板或快捷鍵 Ctrl+L 使用)
         document.getElementById('import-input').addEventListener('change', (e) => {
             const file = e.target.files[0];
+            if (file) {
+                currentFileHandle = null; 
+                currentJsonName = file.name; // 載入時記憶原檔名
+                processImportedFile(file);
+            }
+        });
+
+        function processImportedFile(file) {
             const reader = new FileReader();
             reader.onload = (event) => {
                 const data = JSON.parse(event.target.result);
@@ -1175,12 +1242,9 @@
                     currentVideoName = data.videoName;
                     pendingImportData = data;
                     
-                    // 改回系統彈出視窗，確保用戶點擊確認後才觸發選擇檔案
                     setTimeout(() => {
                         alert(`請選擇對應的影片檔 / Please select the corresponding video file:\n\n👉 ${data.videoName}`);
-                        // 直接呼叫畫面上方的「載入影片」按鈕功能
                         document.getElementById('video-upload').click();
-                        // 修正匯入後 input 的值，避免下次匯入同一個 JSON 沒反應
                         document.getElementById('import-input').value = '';
                     }, 50);
 
@@ -1188,12 +1252,11 @@
                     clips = data.clips;
                     saveState();
                     renderTimeline();
-                    
                     document.getElementById('import-input').value = '';
                 }
             };
             reader.readAsText(file);
-        });
+        }
 
         // 產生播放速度按鈕
         const speedButtonsContainer = document.getElementById('speed-buttons');

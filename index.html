@@ -1927,17 +1927,47 @@
                 mark.style.left = (anchor.xRatio * 100) + '%';
                 mark.style.top = (anchor.yRatio * 100) + '%';
                 
-                mark.innerHTML = `<div class="anchor-label">♫ ${anchor.regionName}</div>`;
-                
-                // 點擊 PDF 上的錨點，讓主程式影片跳轉
-                mark.addEventListener('click', () => {
-                    const reg = customRegions.find(r => r.name === anchor.regionName);
-                    if (reg) {
-                        video.currentTime = reg.start;
-                        savedPlayTime = reg.start;
-                        if (video.paused) video.play();
+                mark.innerHTML = `
+                <div style="position: relative; display: inline-block;">
+                    <div class="anchor-label">♫ ${anchor.regionName}</div>
+                    <div class="remove-anchor-btn" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.4); z-index: 60; border: 2px solid white;" title="取消此錨點">✕</div>
+                </div>
+            `;
+            
+            // 點擊 PDF 上的錨點，讓主程式影片跳轉或刪除錨點
+            mark.addEventListener('click', (e) => {
+                // 1) 點擊 x 取消錨點
+                if (e.target.classList.contains('remove-anchor-btn')) {
+                    const idx = pdfAnchors.findIndex(a => a.regionName === anchor.regionName);
+                    if (idx !== -1) {
+                        pdfAnchors.splice(idx, 1);
+                        window.renderPdfAnchorsInWindow(win);
+                        window.updateSheetWindowUI();
                     }
-                });
+                    return;
+                }
+
+                // 2) 點擊主體跳轉並同步主程式按鈕狀態
+                const regIndex = customRegions.findIndex(r => r.name === anchor.regionName);
+                if (regIndex !== -1) {
+                    const reg = customRegions[regIndex];
+                    
+                    // 同步主畫面狀態
+                    activeRegionIndex = regIndex;
+                    savedPlayTime = reg.start;
+                    video.currentTime = reg.start;
+                    loopRegion = { start: reg.start, end: reg.end };
+                    renderTimeline();
+                    renderRegions();
+                    
+                    if (video.paused) video.play();
+                    
+                    // 自動平滑捲動主畫面時間軸
+                    const maxTime = Math.max(duration, ...clips.map(c => c.end));
+                    const contentWidth = document.getElementById('timeline-content').scrollWidth;
+                    timelineContainer.scrollTo({ left: (reg.start / maxTime) * contentWidth - 50, behavior: 'smooth' });
+                }
+            });
 
                 pageData.anchorContainer.appendChild(mark);
             });

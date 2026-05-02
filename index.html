@@ -86,7 +86,7 @@
                     <div id="pdf-placeholder" class="text-gray-400 mt-20">請載入 PDF 文件</div>
                 </div>
                 <!-- 右側：定義區間按鈕列表 -->
-                <div class="w-64 bg-gray-800 border-l border-gray-700 p-4 flex flex-col gap-2 overflow-y-auto" id="sheet-regions-list">
+                <div class="w-min min-w-[70px] max-w-[45vw] bg-gray-800 border-l border-gray-700 p-4 flex flex-col gap-2 overflow-y-auto" id="sheet-regions-list">
                     <div class="text-sm text-gray-400 mb-2 leading-relaxed">拖曳下方按鈕至左側 PDF 建立錨點。<br>點擊按鈕可跳轉至該錨點位置。</div>
                     <!-- 按鈕將由 JS 動態生成 -->
                 </div>
@@ -1206,8 +1206,8 @@
                 };
                 regionContainer.appendChild(btn);
             });
-            if (typeof renderSheetRegions === 'function') {
-                renderSheetRegions();
+            if (typeof window.updateSheetWindowUI === 'function') {
+                window.updateSheetWindowUI();
             }
         }
 
@@ -1630,14 +1630,14 @@
                     .pdf-area { flex: 1; overflow: auto; padding: 20px; background: #4b5563; touch-action: pan-x pan-y; }
                     /* 縮放專用容器，確保子元素正常縮放 */
                     #pdf-scale-wrapper { display: flex; flex-direction: column; align-items: center; transform-origin: top left; transition: zoom 0.1s ease-out; }
-                    .sidebar { width: 70px; background: #1f2937; border-left: 1px solid #374151; padding: 8px; overflow-y: auto; flex-shrink: 0; z-index: 50; }
+                    .sidebar { width: min-content; min-width: 70px; max-width: 45vw; background: #1f2937; border-left: 1px solid #374151; padding: 8px; overflow-y: auto; flex-shrink: 0; z-index: 50; }
                     .page-container { position: relative; margin: 0 auto 20px auto; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: block; }
                     .btn { background: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
                     .btn:hover { background: #1d4ed8; }
                     .region-btn { background-color: #9333ea; color: white; padding: 4px 10px; border-radius: 9999px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: grab; opacity: 0.9; border: 1px solid #facc15; box-shadow: 0 2px 4px rgba(0,0,0,0.2); user-select: none; }
                     .region-btn:hover { opacity: 1; background-color: #7e22ce; }
-                    .anchor-mark { position: absolute; transform: translate(-50%, -50%); cursor: pointer; transition: transform 0.2s; pointer-events: auto; }
-                    .anchor-mark:hover { transform: translate(-50%, -50%) scale(1.15); z-index: 50; }
+                    .anchor-mark { position: absolute; transform: translate(-50%, -50%) scale(var(--anchor-scale, 1)); cursor: pointer; transition: transform 0.2s; pointer-events: auto; }
+                    .anchor-mark:hover { transform: translate(-50%, -50%) scale(calc(var(--anchor-scale, 1) * 1.15)); z-index: 50; }
                     .anchor-label { background-color:#9333ea; border:4px solid #facc15; color:white; font-size:36px; padding:8px 24px; border-radius:9999px; white-space:nowrap; box-shadow:0 8px 12px rgba(0,0,0,0.3); font-weight: bold; }
                 </style>
             </head>
@@ -1650,6 +1650,9 @@
                     <div style="display:flex; align-items:center; gap:16px;">
                         <!-- 縮放操作區 -->
                         <div style="display:flex; align-items:center; gap:8px; background:#374151; padding:4px 12px; border-radius:4px;">
+                            <button class="btn" id="anchor-size-up" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="放大標籤">↑</button>
+                            <button class="btn" id="anchor-size-down" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="縮小標籤">↓</button>
+                            <div style="width: 1px; height: 20px; background: #6b7280; margin: 0 4px;"></div>
                             <input type="range" id="zoom-slider" min="0.05" max="2.0" step="0.05" value="1.0" style="width: 140px; cursor: pointer; accent-color: #60a5fa;">
                             <span id="zoom-display" style="font-size:14px; width:45px; text-align:center; font-family:monospace;">100%</span>
                             <button class="btn" id="zoom-fit-btn" style="padding:2px 10px; font-size:12px; background:#10b981;">放寬</button>
@@ -1688,6 +1691,18 @@
             const pdfViewerContainer = doc.getElementById('pdf-viewer-container');
             const scaleWrapper = doc.getElementById('pdf-scale-wrapper');
             const zoomDisplay = doc.getElementById('zoom-display');
+            
+            // 標籤大小控制邏輯
+            window.globalAnchorScale = window.globalAnchorScale || 1.0;
+            const updateAnchorSize = (delta) => {
+                window.globalAnchorScale = Math.max(0.3, Math.min(3.0, window.globalAnchorScale + delta));
+                doc.documentElement.style.setProperty('--anchor-scale', window.globalAnchorScale);
+            };
+            const btnUp = doc.getElementById('anchor-size-up');
+            const btnDown = doc.getElementById('anchor-size-down');
+            if (btnUp) btnUp.onclick = () => updateAnchorSize(0.1);
+            if (btnDown) btnDown.onclick = () => updateAnchorSize(-0.1);
+            doc.documentElement.style.setProperty('--anchor-scale', window.globalAnchorScale);
             
             // 加入左右寬度拖曳調整邏輯 (支援滑鼠與觸控)
             const vResizer = doc.getElementById('v-resizer');
@@ -1908,6 +1923,24 @@
                 }
             }
             
+            // 綁定子視窗快捷鍵，轉發給主視窗控制播放/暫停與取消區域
+            win.document.addEventListener('keydown', (e) => {
+                const tag = e.target.tagName ? e.target.tagName.toLowerCase() : '';
+                if (tag === 'input' || tag === 'textarea') return;
+
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: ' ', code: 'Space', bubbles: true, cancelable: true
+                    }));
+                } else if (e.key.toLowerCase() === 'm') {
+                    e.preventDefault();
+                    document.body.dispatchEvent(new KeyboardEvent('keydown', {
+                        key: 'm', code: 'KeyM', bubbles: true, cancelable: true
+                    }));
+                }
+            });
+            
             // 初始生成右側按鈕
             window.updateSheetWindowUI();
         }
@@ -1929,11 +1962,73 @@
                 
                 mark.innerHTML = `
                 <div style="position: relative; display: inline-block;">
-                    <div class="anchor-label">♫ ${anchor.regionName}</div>
+                    <div class="anchor-label" style="cursor: grab;">♫ ${anchor.regionName}</div>
                     <div class="remove-anchor-btn" style="position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.4); z-index: 60; border: 2px solid white;" title="取消此錨點">✕</div>
                 </div>
             `;
             
+            // 加入拖曳邏輯
+            let isDraggingAnchor = false;
+            let hasDragged = false;
+            let startX = 0, startY = 0;
+
+            const startDrag = (e) => {
+                if (e.target.classList.contains('remove-anchor-btn')) return;
+                isDraggingAnchor = true;
+                hasDragged = false;
+                startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                startY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+                mark.style.transition = 'none';
+                mark.querySelector('.anchor-label').style.cursor = 'grabbing';
+            };
+
+            const doDrag = (e) => {
+                if (!isDraggingAnchor) return;
+                const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+                
+                // 判斷移動距離超過 5px 才視為拖曳，避免輕微手震被判定為拖曳
+                if (!hasDragged && (Math.abs(clientX - startX) > 5 || Math.abs(clientY - startY) > 5)) {
+                    hasDragged = true;
+                }
+                
+                if (hasDragged) {
+                    e.preventDefault();
+                    const rect = pageData.anchorContainer.getBoundingClientRect();
+                    let newXRatio = (clientX - rect.left) / rect.width;
+                    let newYRatio = (clientY - rect.top) / rect.height;
+                    
+                    newXRatio = Math.max(0, Math.min(1, newXRatio));
+                    newYRatio = Math.max(0, Math.min(1, newYRatio));
+                    
+                    mark.style.left = (newXRatio * 100) + '%';
+                    mark.style.top = (newYRatio * 100) + '%';
+                    
+                    mark.dataset.newX = newXRatio;
+                    mark.dataset.newY = newYRatio;
+                }
+            };
+
+            const stopDrag = () => {
+                if (isDraggingAnchor) {
+                    isDraggingAnchor = false;
+                    mark.style.transition = '';
+                    mark.querySelector('.anchor-label').style.cursor = 'grab';
+                    
+                    if (hasDragged && mark.dataset.newX !== undefined && mark.dataset.newY !== undefined) {
+                        anchor.xRatio = parseFloat(mark.dataset.newX);
+                        anchor.yRatio = parseFloat(mark.dataset.newY);
+                    }
+                }
+            };
+
+            mark.addEventListener('mousedown', startDrag);
+            mark.addEventListener('touchstart', startDrag, { passive: false });
+            win.document.addEventListener('mousemove', doDrag);
+            win.document.addEventListener('touchmove', doDrag, { passive: false });
+            win.document.addEventListener('mouseup', stopDrag);
+            win.document.addEventListener('touchend', stopDrag);
+
             // 點擊 PDF 上的錨點，讓主程式影片跳轉或刪除錨點
             mark.addEventListener('click', (e) => {
                 // 1) 點擊 x 取消錨點
@@ -1944,6 +2039,12 @@
                         window.renderPdfAnchorsInWindow(win);
                         window.updateSheetWindowUI();
                     }
+                    return;
+                }
+
+                // 如果剛剛發生拖曳行為，則阻止點擊跳轉觸發
+                if (hasDragged) {
+                    hasDragged = false;
                     return;
                 }
 

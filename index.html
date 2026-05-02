@@ -1630,7 +1630,7 @@
                     .pdf-area { flex: 1; overflow: auto; padding: 20px; background: #4b5563; touch-action: pan-x pan-y; }
                     /* 縮放專用容器，確保子元素正常縮放 */
                     #pdf-scale-wrapper { display: flex; flex-direction: column; align-items: center; transform-origin: top left; transition: zoom 0.1s ease-out; }
-                    .sidebar { width: 140px; background: #1f2937; border-left: 1px solid #374151; padding: 10px; overflow-y: auto; flex-shrink: 0; z-index: 50; }
+                    .sidebar { width: 70px; background: #1f2937; border-left: 1px solid #374151; padding: 8px; overflow-y: auto; flex-shrink: 0; z-index: 50; }
                     .page-container { position: relative; margin: 0 auto 20px auto; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: block; }
                     .btn { background: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
                     .btn:hover { background: #1d4ed8; }
@@ -1664,6 +1664,8 @@
                             <div id="pdf-placeholder" style="color:#9ca3af; margin-top:80px; font-size:15px; text-align:center;">請載入 PDF 文件。支援平板雙指縮放與滑鼠滾輪。</div>
                         </div>
                     </div>
+                    <!-- 加上可拖曳的調整寬度控制棒 -->
+                    <div id="v-resizer" style="width: 6px; background: #374151; cursor: col-resize; flex-shrink: 0; z-index: 60; transition: background 0.2s; border-left: 1px solid #1f2937; border-right: 1px solid #1f2937;" onmouseover="this.style.background='#60a5fa'" onmouseout="this.style.background='#374151'"></div>
                     <div class="sidebar" id="sheet-regions-list">
                         <div style="font-size:12px; color:#9ca3af; margin-bottom:16px; line-height:1.6;">拖曳下方按鈕至左側文件建立錨點。<br>點擊按鈕可跳轉對應頁面。</div>
                     </div>
@@ -1686,6 +1688,44 @@
             const scaleWrapper = doc.getElementById('pdf-scale-wrapper');
             const zoomDisplay = doc.getElementById('zoom-display');
             
+            // 加入左右寬度拖曳調整邏輯 (支援滑鼠與觸控)
+            const vResizer = doc.getElementById('v-resizer');
+            const sidebar = doc.getElementById('sheet-regions-list');
+            let isResizingWidth = false;
+            
+            if (vResizer && sidebar) {
+                const startResizeWidth = (e) => {
+                    isResizingWidth = true;
+                    doc.body.style.cursor = 'col-resize';
+                    doc.body.style.userSelect = 'none';
+                };
+                const doResizeWidth = (e) => {
+                    if (!isResizingWidth) return;
+                    // 判斷是滑鼠還是觸控事件
+                    const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                    const newWidth = doc.body.clientWidth - clientX;
+                    // 限制側邊欄寬度在 70px 到 畫面一半 (50%) 之間
+                    if (newWidth >= 70 && newWidth < doc.body.clientWidth * 0.5) {
+                        sidebar.style.width = newWidth + 'px';
+                    }
+                };
+                const stopResizeWidth = () => {
+                    if (isResizingWidth) {
+                        isResizingWidth = false;
+                        doc.body.style.cursor = '';
+                        doc.body.style.userSelect = '';
+                    }
+                };
+
+                // 綁定事件監聽器
+                vResizer.addEventListener('mousedown', startResizeWidth);
+                vResizer.addEventListener('touchstart', startResizeWidth, { passive: true });
+                doc.addEventListener('mousemove', doResizeWidth);
+                doc.addEventListener('touchmove', doResizeWidth, { passive: true });
+                doc.addEventListener('mouseup', stopResizeWidth);
+                doc.addEventListener('touchend', stopResizeWidth);
+            }
+
             let currentPdfDoc = null;
             win.pdfPagesRendered = []; 
             let pdfZoom = 1.0;
@@ -1908,10 +1948,11 @@
                 if (isPlaced) {
                     btn.style.backgroundColor = '#059669'; // 變色為綠色表示已拉入
                     btn.style.borderColor = '#34d399';
-                    // 加入取消錨點的 "x" 按鈕，並把文字設為 pointer-events:none 防止誤觸
-                    btn.innerHTML = `<span style="pointer-events:none;">✔ ${reg.name}</span> <div style="display:flex; align-items:center; gap:6px;"><span style="font-size:10px; opacity:0.7; pointer-events:none;">已拉入</span><span class="remove-anchor" style="cursor:pointer; background:rgba(255,255,255,0.25); border-radius:50%; width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; font-weight:bold; font-size:10px;" title="取消錨點">✕</span></div>`;
+                    // 加入取消錨點的 "x" 按鈕，並把文字設為 pointer-events:none 防止誤觸 (拿掉已拉入，並設定文字防溢出)
+                    btn.innerHTML = `<span style="pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1; min-width: 0; margin-right: 4px;">✔ ${reg.name}</span> <div style="display:flex; align-items:center; flex-shrink: 0;"><span class="remove-anchor" style="cursor:pointer; background:rgba(255,255,255,0.25); border-radius:50%; width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; font-weight:bold; font-size:10px;" title="取消錨點">✕</span></div>`;
                 } else {
-                    btn.innerHTML = `<span style="pointer-events:none;">♫ ${reg.name}</span> <span style="font-size:10px; opacity:0.7; pointer-events:none;">拖曳</span>`;
+                    // 拿掉拖曳字眼，並設定文字防溢出
+                    btn.innerHTML = `<span style="pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1; min-width: 0;">♫ ${reg.name}</span>`;
                 }
                 
                 btn.addEventListener('dragstart', (e) => {

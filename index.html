@@ -1653,6 +1653,7 @@
                             <input type="range" id="zoom-slider" min="0.2" max="2.0" step="0.05" value="1.0" style="width: 140px; cursor: pointer; accent-color: #60a5fa;">
                             <span id="zoom-display" style="font-size:14px; width:45px; text-align:center; font-family:monospace;">100%</span>
                             <button class="btn" id="zoom-fit-btn" style="padding:2px 10px; font-size:12px; background:#10b981;">放寬</button>
+                            <button class="btn" id="zoom-fit-height-btn" style="padding:2px 10px; font-size:12px; background:#f59e0b;">放直</button>
                         </div>
                         <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
                         <button class="btn" onclick="document.getElementById('pdf-upload').click()">載入 PDF</button>
@@ -1754,6 +1755,19 @@
                         const containerWidth = pdfViewerContainer.clientWidth - 45; // 扣除 padding 與捲軸緩衝空間
                         const originalPageWidth = win.pdfPagesRendered[0].viewport.width; // 直接抓取真實原始寬度，避免 CSS Zoom 造成的計算浮動誤差
                         const fitZoom = containerWidth / originalPageWidth;
+                        setPdfZoom(fitZoom);
+                    }
+                };
+            }
+
+            const zoomFitHeightBtn = doc.getElementById('zoom-fit-height-btn');
+            if (zoomFitHeightBtn) {
+                zoomFitHeightBtn.onclick = () => {
+                    if (win.pdfPagesRendered && win.pdfPagesRendered.length > 0) {
+                        const pdfViewerContainer = doc.getElementById('pdf-viewer-container');
+                        const containerHeight = pdfViewerContainer.clientHeight - 45; // 扣除 padding 與上下緩衝空間
+                        const originalPageHeight = win.pdfPagesRendered[0].viewport.height; 
+                        const fitZoom = containerHeight / originalPageHeight;
                         setPdfZoom(fitZoom);
                     }
                 };

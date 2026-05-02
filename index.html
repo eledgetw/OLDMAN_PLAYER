@@ -2008,7 +2008,7 @@
                     btn.style.opacity = '0.9';
                 });
 
-                // 點擊右側列表按鈕，讓左側 PDF 跳至對應頁面位置
+                // 點擊右側列表按鈕，讓左側 PDF 跳至對應頁面位置，並同步主程式狀態
                 btn.addEventListener('click', (e) => {
                     // 1) 點擊到 X 按鈕，刪除該錨點
                     if (e.target.classList.contains('remove-anchor')) {
@@ -2021,7 +2021,25 @@
                         return; // 終止跳轉
                     }
 
-                    // 2) 跳轉邏輯
+                    // 2) 同步主畫面狀態 (下方按鈕反白與跳轉)
+                    const regIndex = customRegions.findIndex(r => r.name === reg.name);
+                    if (regIndex !== -1) {
+                        activeRegionIndex = regIndex;
+                        savedPlayTime = customRegions[regIndex].start;
+                        video.currentTime = customRegions[regIndex].start;
+                        loopRegion = { start: customRegions[regIndex].start, end: customRegions[regIndex].end };
+                        renderTimeline();
+                        renderRegions(); // 觸發主程式下方按鈕反白
+                        
+                        if (video.paused) video.play();
+                        
+                        // 自動平滑捲動主畫面時間軸
+                        const maxTime = Math.max(duration, ...clips.map(c => c.end));
+                        const contentWidth = document.getElementById('timeline-content').scrollWidth;
+                        timelineContainer.scrollTo({ left: (customRegions[regIndex].start / maxTime) * contentWidth - 50, behavior: 'smooth' });
+                    }
+
+                    // 3) 左側 PDF 跳轉邏輯
                     const anchor = pdfAnchors.find(a => a.regionName === reg.name);
                     if (anchor) {
                         const pageData = sheetWindow.pdfPagesRendered[anchor.pageNum - 1];

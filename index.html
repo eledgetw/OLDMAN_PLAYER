@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title id="page-title">OLDMAN'S Player - 老人的播放器</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
     <style>
         /* 隱藏預設卷軸讓版面乾淨 */
         ::-webkit-scrollbar { display: none; }
@@ -23,9 +25,10 @@
         <div class="flex items-center gap-2">
             <input type="file" id="video-upload" accept="video/*" class="hidden">
             <button onclick="document.getElementById('video-upload').click()" data-i18n="loadVideo" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg text-sm">載入影片</button>
-            <input type="file" id="import-input" accept=".json" class="hidden">
+            <input type="file" id="import-input" accept=".json,video/*,.pdf" multiple class="hidden">
             <button id="export-btn" data-i18n="export" class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm">匯出</button>
             <button id="import-btn" data-i18n="import" class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm" onclick="document.getElementById('import-input').click()">匯入</button>
+            <button id="sheet-music-btn" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded-lg text-sm hidden flex items-center gap-1 shadow" title="開啟樂譜"><svg class="w-4 h-4 text-yellow-300" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13H9.5v-1.25c0-.62-.5-1.12-1.12-1.12H8.25V11.5h3.25V15zM13 9V3.5L18.5 9H13z"/></svg>樂譜</button>
             <button id="undo-btn" class="p-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors" title="上一動 (Ctrl+Z)"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg></button>
             <button id="redo-btn" class="p-2 rounded-lg bg-gray-600 hover:bg-gray-500 text-white transition-colors" title="下一動 (Ctrl+Y)"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/></svg></button>
             <button id="preview-toggle" class="p-2 rounded-lg bg-green-600 text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button>
@@ -54,6 +57,40 @@
         </div>
         <div id="speed-toast" class="absolute top-16 left-4 bg-black/80 text-white text-2xl font-bold px-4 py-2 rounded-lg backdrop-blur-md opacity-0 pointer-events-none transition-opacity duration-300 z-50">
             1.0x
+        </div>
+
+        <!-- 樂譜圖示按鈕 -->
+        <button id="sheet-music-btn" class="absolute right-4 top-1/2 -translate-y-1/2 bg-gray-800/80 hover:bg-gray-700 text-white p-3 rounded-full shadow-lg backdrop-blur-sm transition-all z-40 hidden" title="樂譜編輯模式">
+            <svg class="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13H9.5v-1.25c0-.62-.5-1.12-1.12-1.12H8.25V11.5h3.25V15zM13 9V3.5L18.5 9H13z"/>
+            </svg>
+        </button>
+
+        <!-- 樂譜編輯視窗 -->
+        <div id="sheet-music-modal" class="absolute inset-0 bg-gray-900 z-[100] hidden flex flex-col">
+            <div class="bg-gray-800 p-3 flex justify-between items-center border-b border-gray-700 shadow-md">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6z"/></svg>
+                    樂譜編輯模式
+                </h2>
+                <div class="flex gap-2">
+                    <input type="file" id="pdf-upload" accept="application/pdf" class="hidden">
+                    <button onclick="document.getElementById('pdf-upload').click()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm">載入 PDF</button>
+                    <button id="close-sheet-modal" class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded text-sm">關閉</button>
+                </div>
+            </div>
+            <div class="flex-1 flex min-h-0">
+                <!-- 左側：PDF 原文件 -->
+                <div id="pdf-viewer-container" class="flex-1 bg-gray-600 overflow-auto relative flex flex-col items-center py-4 gap-4 scroll-smooth">
+                    <!-- PDF 頁面會在這裡生成 -->
+                    <div id="pdf-placeholder" class="text-gray-400 mt-20">請載入 PDF 文件</div>
+                </div>
+                <!-- 右側：定義區間按鈕列表 -->
+                <div class="w-64 bg-gray-800 border-l border-gray-700 p-4 flex flex-col gap-2 overflow-y-auto" id="sheet-regions-list">
+                    <div class="text-sm text-gray-400 mb-2 leading-relaxed">拖曳下方按鈕至左側 PDF 建立錨點。<br>點擊按鈕可跳轉至該錨點位置。</div>
+                    <!-- 按鈕將由 JS 動態生成 -->
+                </div>
+            </div>
         </div>
     </main>
 
@@ -176,6 +213,8 @@
         let speedToastTimer = null; // 速度提示計時器
         let clickSelectStart = null;// 兩點選取起點
 
+        let pdfAnchors = []; // 儲存樂譜錨點資訊
+
         // 歷史紀錄狀態 (Undo/Redo)
         let history = [];
         let historyIndex = -1;
@@ -282,20 +321,89 @@
             extractAudioWaveform(file);
         });
 
-        // 支援滑鼠拖曳載入影片
+        // 支援滑鼠拖曳載入多種檔案 (影片、JSON、PDF)
         document.body.addEventListener('dragover', (e) => {
             e.preventDefault(); // 必須阻止預設行為，否則瀏覽器會直接開啟影片離開網頁
         });
 
-        document.body.addEventListener('drop', (e) => {
+        document.body.addEventListener('drop', async (e) => {
             e.preventDefault();
-            const file = e.dataTransfer.files[0];
-            if (!file || !file.type.startsWith('video/')) return;
-            currentVideoName = file.name;
-            const url = URL.createObjectURL(file);
-            video.src = url;
-            video.load();
-            extractAudioWaveform(file);
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length === 0) return;
+
+            let videoFile = null;
+            let jsonFile = null;
+            let pdfFile = null;
+
+            files.forEach(file => {
+                if (file.type.startsWith('video/')) videoFile = file;
+                else if (file.name.endsWith('.json') || file.type === 'application/json') jsonFile = file;
+                else if (file.name.endsWith('.pdf') || file.type === 'application/pdf') pdfFile = file;
+            });
+
+            // 1. 處理 JSON (先讀取，確保 pendingImportData 準備好)
+            if (jsonFile) {
+                await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const data = JSON.parse(event.target.result);
+                        customRegions = data.customRegions || [];
+                        pdfAnchors = data.pdfAnchors || [];
+                        document.getElementById('sheet-music-btn').classList.remove('hidden');
+                        renderRegions();
+                        if (typeof window.updateSheetWindowUI === 'function') window.updateSheetWindowUI();
+                        
+                        if (data.videoName) {
+                            currentVideoName = data.videoName;
+                            pendingImportData = data;
+                            // 若沒有一起拉入影片，才提醒選擇影片
+                            if (!videoFile) {
+                                setTimeout(() => {
+                                    alert(`請選擇對應的影片檔 / Please select the corresponding video file:\n\n👉 ${data.videoName}`);
+                                    document.getElementById('video-upload').click();
+                                }, 50);
+                            }
+                        } else {
+                            clips = data.clips;
+                            saveState();
+                            renderTimeline();
+                        }
+                        resolve();
+                    };
+                    reader.readAsText(jsonFile);
+                });
+            }
+
+            // 2. 處理影片 (載入後自動觸發 loadedmetadata 讀取上面的 pendingImportData)
+            if (videoFile) {
+                currentVideoName = videoFile.name;
+                const url = URL.createObjectURL(videoFile);
+                video.src = url;
+                video.load();
+                extractAudioWaveform(videoFile);
+            }
+
+            // 3. 處理 PDF 樂譜 (開啟視窗並傳入資料)
+            if (pdfFile) {
+                const pdfReader = new FileReader();
+                pdfReader.onload = function() {
+                    const typedarray = new Uint8Array(this.result);
+                    window.pendingPdfBuffer = typedarray; // 暫存於全域供子視窗抓取
+
+                    // 觸發開啟樂譜視窗
+                    document.getElementById('sheet-music-btn').click();
+
+                    // 輪詢等待子視窗就緒後，直接自動載入 PDF
+                    const checkInterval = setInterval(() => {
+                        if (sheetWindow && !sheetWindow.closed && sheetWindow.loadPdfInWindowGlobally) {
+                            clearInterval(checkInterval);
+                            sheetWindow.loadPdfInWindowGlobally(window.pendingPdfBuffer);
+                            window.pendingPdfBuffer = null;
+                        }
+                    }, 200);
+                };
+                pdfReader.readAsArrayBuffer(pdfFile);
+            }
         });
 
         // 影片載入完成初始化資料
@@ -313,6 +421,7 @@
                     loopRegion = null;
                 }
                 modeIndicator.classList.remove('hidden');
+                document.getElementById('sheet-music-btn').classList.remove('hidden');
                 
                 history = [];
                 historyIndex = -1;
@@ -871,7 +980,7 @@
             }
             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'l') {
                 e.preventDefault();
-                document.getElementById('import-input').click();
+                document.getElementById('import-btn').click();
                 return;
             }
 
@@ -1097,6 +1206,9 @@
                 };
                 regionContainer.appendChild(btn);
             });
+            if (typeof renderSheetRegions === 'function') {
+                renderSheetRegions();
+            }
         }
 
         // 綁定右鍵事件到 loopRegion
@@ -1164,7 +1276,7 @@
 
         // 匯出功能 (支援覆蓋原檔)
         document.getElementById('export-btn').addEventListener('click', async () => {
-            const data = JSON.stringify({ videoName: currentVideoName, clips, customRegions });
+            const data = JSON.stringify({ videoName: currentVideoName, clips, customRegions, pdfAnchors });
             
             // 檢查瀏覽器是否支援 File System Access API
             if ('showSaveFilePicker' in window) {
@@ -1213,13 +1325,29 @@
                 e.preventDefault();
                 if ('showOpenFilePicker' in window) {
                     try {
-                        const [handle] = await window.showOpenFilePicker({
-                            types: [{ description: 'JSON File', accept: { 'application/json': ['.json'] } }]
+                        const handles = await window.showOpenFilePicker({
+                            multiple: true,
+                            types: [
+                                {
+                                    description: '所有支援的檔案 (JSON, 影片, PDF)',
+                                    accept: {
+                                        '*/*': ['.json', '.mp4', '.mov', '.avi', '.webm', '.mkv', '.pdf']
+                                    }
+                                }
+                            ]
                         });
-                        currentFileHandle = handle; 
-                        currentJsonName = handle.name; // 載入時記憶原檔名
-                        const file = await handle.getFile();
-                        processImportedFile(file);
+                        
+                        let files = [];
+                        for (const handle of handles) {
+                            const file = await handle.getFile();
+                            files.push(file);
+                            // 儲存 JSON 的 handle 以供後續快速 (Cmd+S) 覆蓋存檔
+                            if (file.name.endsWith('.json')) {
+                                currentFileHandle = handle;
+                                currentJsonName = file.name;
+                            }
+                        }
+                        processMultipleFiles(files);
                     } catch (err) {
                         if (err.name !== 'AbortError') console.error(err);
                     }
@@ -1229,41 +1357,95 @@
             });
         }
 
-        // 匯入功能 (供舊版瀏覽器平板或快捷鍵 Ctrl+L 使用)
+        // 匯入功能 (供舊版瀏覽器或回退方案使用)
         document.getElementById('import-input').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                currentFileHandle = null; 
-                currentJsonName = file.name; // 載入時記憶原檔名
-                processImportedFile(file);
+            const files = Array.from(e.target.files);
+            if (files.length > 0) {
+                const jsonFile = files.find(f => f.name.endsWith('.json'));
+                if (jsonFile) {
+                    currentFileHandle = null; 
+                    currentJsonName = jsonFile.name;
+                }
+                processMultipleFiles(files);
             }
+            e.target.value = ''; // 清除 value 允許重複選擇相同檔案
         });
 
-        function processImportedFile(file) {
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const data = JSON.parse(event.target.result);
-                customRegions = data.customRegions || [];
-                renderRegions();
-                
-                if (data.videoName) {
-                    currentVideoName = data.videoName;
-                    pendingImportData = data;
-                    
-                    setTimeout(() => {
-                        alert(`請選擇對應的影片檔 / Please select the corresponding video file:\n\n👉 ${data.videoName}`);
-                        document.getElementById('video-upload').click();
-                        document.getElementById('import-input').value = '';
-                    }, 50);
+        async function processMultipleFiles(files) {
+            let videoFile = null;
+            let jsonFile = null;
+            let pdfFile = null;
 
-                } else {
-                    clips = data.clips;
-                    saveState();
-                    renderTimeline();
-                    document.getElementById('import-input').value = '';
-                }
-            };
-            reader.readAsText(file);
+            files.forEach(file => {
+                if (file.type.startsWith('video/') || file.name.match(/\.(mp4|mov|webm|avi|mkv)$/i)) videoFile = file;
+                else if (file.name.endsWith('.json') || file.type === 'application/json') jsonFile = file;
+                else if (file.name.endsWith('.pdf') || file.type === 'application/pdf') pdfFile = file;
+            });
+
+            // 1. 處理 JSON (先讀取，確保 pendingImportData 準備好)
+            if (jsonFile) {
+                await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const data = JSON.parse(event.target.result);
+                        customRegions = data.customRegions || [];
+                        pdfAnchors = data.pdfAnchors || [];
+                        
+                        document.getElementById('sheet-music-btn').classList.remove('hidden');
+                        renderRegions();
+                        if (typeof window.updateSheetWindowUI === 'function') window.updateSheetWindowUI();
+                        
+                        if (data.videoName) {
+                            currentVideoName = data.videoName;
+                            pendingImportData = data;
+                            // 若沒有一起拉入影片，才提醒選擇影片
+                            if (!videoFile) {
+                                setTimeout(() => {
+                                    alert(`請選擇對應的影片檔 / Please select the corresponding video file:\n\n👉 ${data.videoName}`);
+                                    document.getElementById('video-upload').click();
+                                }, 50);
+                            }
+                        } else {
+                            clips = data.clips;
+                            saveState();
+                            renderTimeline();
+                        }
+                        resolve();
+                    };
+                    reader.readAsText(jsonFile);
+                });
+            }
+
+            // 2. 處理影片 (載入後自動觸發 loadedmetadata 讀取上面的 pendingImportData)
+            if (videoFile) {
+                currentVideoName = videoFile.name;
+                const url = URL.createObjectURL(videoFile);
+                video.src = url;
+                video.load();
+                extractAudioWaveform(videoFile);
+            }
+
+            // 3. 處理 PDF 樂譜 (開啟視窗並傳入資料)
+            if (pdfFile) {
+                const pdfReader = new FileReader();
+                pdfReader.onload = function() {
+                    const typedarray = new Uint8Array(this.result);
+                    window.pendingPdfBuffer = typedarray; 
+
+                    // 觸發開啟樂譜視窗
+                    document.getElementById('sheet-music-btn').click();
+
+                    // 輪詢等待子視窗就緒後，直接自動載入 PDF
+                    const checkInterval = setInterval(() => {
+                        if (sheetWindow && !sheetWindow.closed && sheetWindow.loadPdfInWindowGlobally) {
+                            clearInterval(checkInterval);
+                            sheetWindow.loadPdfInWindowGlobally(window.pendingPdfBuffer);
+                            window.pendingPdfBuffer = null;
+                        }
+                    }, 200);
+                };
+                pdfReader.readAsArrayBuffer(pdfFile);
+            }
         }
 
         // 產生播放速度按鈕
@@ -1418,6 +1600,383 @@
 
         document.addEventListener('mouseup', stopResize);
         document.addEventListener('touchend', stopResize);
+
+        // --- 樂譜功能 (另開新視窗) ---
+        let sheetWindow = null;
+        const sheetMusicBtn = document.getElementById('sheet-music-btn');
+
+        sheetMusicBtn.addEventListener('click', () => {
+            // 如果視窗已經存在，直接聚焦
+            if (sheetWindow && !sheetWindow.closed) {
+                sheetWindow.focus();
+                return;
+            }
+
+            // 開啟新視窗
+            sheetWindow = window.open('', '_blank', 'width=1100,height=800');
+            
+            // 寫入新視窗的 HTML 架構 (加入縮放控制與觸控手勢綁定容器)
+            sheetWindow.document.write(`
+            <!DOCTYPE html>
+            <html lang="zh-TW">
+            <head>
+                <meta charset="UTF-8">
+                <!-- 禁止原生縮放，改由程式控制確保佈局不跑版 -->
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                <title>樂譜編輯模式</title>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>
+                <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';<\/script>
+                <style>
+                    body { margin: 0; background: #111827; color: white; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; overflow: hidden; }
+                    .toolbar { background: #1f2937; padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #374151; flex-shrink: 0; z-index: 100; }
+                    .main-area { display: flex; flex: 1; overflow: hidden; }
+                    .pdf-area { flex: 1; overflow: auto; padding: 20px; background: #4b5563; touch-action: pan-x pan-y; }
+                    /* 縮放專用容器，確保子元素正常縮放 */
+                    #pdf-scale-wrapper { display: flex; flex-direction: column; align-items: center; transform-origin: top left; transition: zoom 0.1s ease-out; }
+                    .sidebar { width: 140px; background: #1f2937; border-left: 1px solid #374151; padding: 10px; overflow-y: auto; flex-shrink: 0; z-index: 50; }
+                    .page-container { position: relative; margin: 0 auto 20px auto; background: white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: block; }
+                    .btn { background: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+                    .btn:hover { background: #1d4ed8; }
+                    .region-btn { background-color: #9333ea; color: white; padding: 4px 10px; border-radius: 9999px; font-size: 12px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; cursor: grab; opacity: 0.9; border: 1px solid #facc15; box-shadow: 0 2px 4px rgba(0,0,0,0.2); user-select: none; }
+                    .region-btn:hover { opacity: 1; background-color: #7e22ce; }
+                    .anchor-mark { position: absolute; transform: translate(-50%, -50%); cursor: pointer; transition: transform 0.2s; pointer-events: auto; }
+                    .anchor-mark:hover { transform: translate(-50%, -50%) scale(1.15); z-index: 50; }
+                    .anchor-label { background-color:#9333ea; border:2px solid #facc15; color:white; font-size:11px; padding:2px 8px; border-radius:9999px; white-space:nowrap; box-shadow:0 4px 6px rgba(0,0,0,0.3); font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <div class="toolbar">
+                    <h2 style="margin:0; font-size:18px; display:flex; align-items:center; gap:8px;">
+                        <svg style="width:24px; height:24px; color:#60a5fa;" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13H9.5v-1.25c0-.62-.5-1.12-1.12-1.12H8.25V11.5h3.25V15zM13 9V3.5L18.5 9H13z"/></svg>
+                        樂譜編輯模式
+                    </h2>
+                    <div style="display:flex; align-items:center; gap:16px;">
+                        <!-- 縮放操作區 -->
+                        <div style="display:flex; align-items:center; gap:8px; background:#374151; padding:4px 12px; border-radius:4px;">
+                            <input type="range" id="zoom-slider" min="0.2" max="2.0" step="0.05" value="1.0" style="width: 140px; cursor: pointer; accent-color: #60a5fa;">
+                            <span id="zoom-display" style="font-size:14px; width:45px; text-align:center; font-family:monospace;">100%</span>
+                            <button class="btn" id="zoom-fit-btn" style="padding:2px 10px; font-size:12px; background:#10b981;">放寬</button>
+                        </div>
+                        <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
+                        <button class="btn" onclick="document.getElementById('pdf-upload').click()">載入 PDF</button>
+                    </div>
+                </div>
+                <div class="main-area">
+                    <div id="pdf-viewer-container" class="pdf-area">
+                        <div id="pdf-scale-wrapper">
+                            <div id="pdf-placeholder" style="color:#9ca3af; margin-top:80px; font-size:15px; text-align:center;">請載入 PDF 文件。支援平板雙指縮放與滑鼠滾輪。</div>
+                        </div>
+                    </div>
+                    <div class="sidebar" id="sheet-regions-list">
+                        <div style="font-size:12px; color:#9ca3af; margin-bottom:16px; line-height:1.6;">拖曳下方按鈕至左側文件建立錨點。<br>點擊按鈕可跳轉對應頁面。</div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            `);
+            sheetWindow.document.close();
+
+            sheetWindow.onload = () => {
+                setupChildWindow(sheetWindow);
+            };
+        });
+
+        // 定義子視窗的邏輯
+        function setupChildWindow(win) {
+            const doc = win.document;
+            const pdfUpload = doc.getElementById('pdf-upload');
+            const pdfViewerContainer = doc.getElementById('pdf-viewer-container');
+            const scaleWrapper = doc.getElementById('pdf-scale-wrapper');
+            const zoomDisplay = doc.getElementById('zoom-display');
+            
+            let currentPdfDoc = null;
+            win.pdfPagesRendered = []; 
+            let pdfZoom = 1.0;
+
+            // 1) 縮放控制邏輯 (核心使用 CSS zoom 達成捲軸與內容同步放大)
+            function setPdfZoom(z) {
+                pdfZoom = Math.max(0.2, Math.min(2.0, z)); // 限制縮放為 20% 到 200%
+                zoomDisplay.textContent = Math.round(pdfZoom * 100) + '%';
+                scaleWrapper.style.zoom = pdfZoom;
+                const zoomSlider = doc.getElementById('zoom-slider');
+                if (zoomSlider && zoomSlider.value !== pdfZoom.toString()) {
+                    zoomSlider.value = pdfZoom;
+                }
+            }
+
+            const zoomSlider = doc.getElementById('zoom-slider');
+            if (zoomSlider) {
+                zoomSlider.addEventListener('input', (e) => setPdfZoom(parseFloat(e.target.value)));
+            }
+
+            const zoomFitBtn = doc.getElementById('zoom-fit-btn');
+            if (zoomFitBtn) {
+                zoomFitBtn.onclick = () => {
+                    if (win.pdfPagesRendered && win.pdfPagesRendered.length > 0) {
+                        const pdfViewerContainer = doc.getElementById('pdf-viewer-container');
+                        const containerWidth = pdfViewerContainer.clientWidth - 45; // 扣除 padding 與捲軸緩衝空間
+                        const originalPageWidth = win.pdfPagesRendered[0].viewport.width; // 直接抓取真實原始寬度，避免 CSS Zoom 造成的計算浮動誤差
+                        const fitZoom = containerWidth / originalPageWidth;
+                        setPdfZoom(fitZoom);
+                    }
+                };
+            }
+
+            // 2) 滑鼠滾輪縮放 (Ctrl + Wheel)
+            pdfViewerContainer.addEventListener('wheel', (e) => {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+                    setPdfZoom(pdfZoom + delta);
+                }
+            }, { passive: false });
+
+            // 3) 平板雙指縮放 (Pinch-to-zoom) 與防干擾處理
+            let initialDist = 0;
+            let startZoom = 1;
+            pdfViewerContainer.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 2) {
+                    initialDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    startZoom = pdfZoom;
+                }
+            }, { passive: false });
+
+            pdfViewerContainer.addEventListener('touchmove', (e) => {
+                if (e.touches.length === 2) {
+                    e.preventDefault(); // 攔截觸控事件，阻止瀏覽器原生放大造成破版
+                    const currentDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    setPdfZoom(startZoom * (currentDist / initialDist));
+                }
+            }, { passive: false });
+
+            pdfUpload.addEventListener('change', async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const fileReader = new FileReader();
+                fileReader.onload = async function() {
+                    const typedarray = new Uint8Array(this.result);
+                    loadPdfInWindow(win, typedarray);
+                };
+                fileReader.readAsArrayBuffer(file);
+            });
+            
+            win.loadPdfInWindowGlobally = async (data) => loadPdfInWindow(win, data);
+            
+            async function loadPdfInWindow(w, data) {
+                const d = w.document;
+                d.getElementById('pdf-placeholder').style.display = 'none';
+                
+                // 清理舊頁面
+                const oldPages = scaleWrapper.querySelectorAll('.page-container');
+                oldPages.forEach(p => p.remove());
+                w.pdfPagesRendered = [];
+
+                try {
+                    const loadingTask = w.pdfjsLib.getDocument(data);
+                    currentPdfDoc = await loadingTask.promise;
+                    
+                    // 依序建立所有頁面
+                    for (let i = 1; i <= currentPdfDoc.numPages; i++) {
+                        const page = await currentPdfDoc.getPage(i);
+                        // 基礎解析度提高至 2.0，確保放大多倍時依然清晰
+                        const viewport = page.getViewport({ scale: 2.0 });
+                        
+                        const pageContainer = d.createElement('div');
+                        pageContainer.className = 'page-container';
+                        pageContainer.style.width = viewport.width + 'px';
+                        pageContainer.style.height = viewport.height + 'px';
+                        pageContainer.dataset.pageNum = i;
+                        
+                        const canvas = d.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        canvas.style.width = '100%';
+                        canvas.style.height = '100%';
+                        canvas.style.display = 'block';
+                        pageContainer.appendChild(canvas);
+                        
+                        const anchorContainer = d.createElement('div');
+                        anchorContainer.style.position = 'absolute';
+                        anchorContainer.style.top = '0';
+                        anchorContainer.style.left = '0';
+                        anchorContainer.style.width = '100%';
+                        anchorContainer.style.height = '100%';
+                        anchorContainer.style.pointerEvents = 'none';
+                        anchorContainer.style.zIndex = '10';
+                        pageContainer.appendChild(anchorContainer);
+                        
+                        // 處理拖曳放置邏輯
+                        pageContainer.addEventListener('dragover', (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = 'copy';
+                        });
+                        
+                        pageContainer.addEventListener('drop', (e) => {
+                            e.preventDefault();
+                            const regionName = e.dataTransfer.getData('text/plain');
+                            if (!regionName) return;
+                            
+                            const rect = pageContainer.getBoundingClientRect();
+                            
+                            // 即使使用 CSS zoom，比例仍為常數，透過比例運算可免疫放大的偏移
+                            const x = e.clientX - rect.left;
+                            const y = e.clientY - rect.top;
+                            const xRatio = x / rect.width;
+                            const yRatio = y / rect.height;
+                            
+                            const existingIdx = pdfAnchors.findIndex(a => a.regionName === regionName);
+                            if (existingIdx >= 0) {
+                                pdfAnchors[existingIdx] = { regionName, pageNum: i, xRatio, yRatio };
+                            } else {
+                                pdfAnchors.push({ regionName, pageNum: i, xRatio, yRatio });
+                            }
+                            
+                            window.renderPdfAnchorsInWindow(w);
+                            window.updateSheetWindowUI(); // 更新右側列表狀態變色
+                        });
+
+                        scaleWrapper.appendChild(pageContainer);
+                        w.pdfPagesRendered.push({ container: pageContainer, anchorContainer, viewport });
+                        
+                        const renderContext = {
+                            canvasContext: canvas.getContext('2d'),
+                            viewport: viewport
+                        };
+                        await page.render(renderContext).promise;
+                    }
+                    
+                    window.renderPdfAnchorsInWindow(w);
+                    
+                    // 1) 載入完成後自動觸發「放寬」(預設依頁面寬度放寬)
+                    const zoomFitBtn = d.getElementById('zoom-fit-btn');
+                    if (zoomFitBtn) zoomFitBtn.click();
+                    
+                } catch (error) {
+                    console.error('Error rendering PDF:', error);
+                }
+            }
+            
+            // 初始生成右側按鈕
+            window.updateSheetWindowUI();
+        }
+
+        // 綁定於全域，讓主程式更新時可呼叫
+        window.renderPdfAnchorsInWindow = function(win) {
+            if (!win || !win.pdfPagesRendered) return;
+            
+            win.pdfPagesRendered.forEach(p => p.anchorContainer.innerHTML = '');
+            
+            pdfAnchors.forEach(anchor => {
+                const pageData = win.pdfPagesRendered[anchor.pageNum - 1];
+                if (!pageData) return;
+                
+                const mark = win.document.createElement('div');
+                mark.className = 'anchor-mark';
+                mark.style.left = (anchor.xRatio * 100) + '%';
+                mark.style.top = (anchor.yRatio * 100) + '%';
+                
+                mark.innerHTML = `<div class="anchor-label">♫ ${anchor.regionName}</div>`;
+                
+                // 點擊 PDF 上的錨點，讓主程式影片跳轉
+                mark.addEventListener('click', () => {
+                    const reg = customRegions.find(r => r.name === anchor.regionName);
+                    if (reg) {
+                        video.currentTime = reg.start;
+                        savedPlayTime = reg.start;
+                        if (video.paused) video.play();
+                    }
+                });
+
+                pageData.anchorContainer.appendChild(mark);
+            });
+        };
+
+        window.updateSheetWindowUI = function() {
+            if (!sheetWindow || sheetWindow.closed) return;
+            const list = sheetWindow.document.getElementById('sheet-regions-list');
+            if (!list) return;
+            
+            const desc = list.querySelector('div');
+            list.innerHTML = '';
+            if (desc) list.appendChild(desc);
+            
+            customRegions.forEach((reg) => {
+                const btn = sheetWindow.document.createElement('div');
+                btn.className = 'region-btn';
+                btn.draggable = true;
+                
+                // 判斷是否已經有該區塊的錨點，有的話變更樣式與文字
+                const isPlaced = pdfAnchors.some(a => a.regionName === reg.name);
+                if (isPlaced) {
+                    btn.style.backgroundColor = '#059669'; // 變色為綠色表示已拉入
+                    btn.style.borderColor = '#34d399';
+                    // 加入取消錨點的 "x" 按鈕，並把文字設為 pointer-events:none 防止誤觸
+                    btn.innerHTML = `<span style="pointer-events:none;">✔ ${reg.name}</span> <div style="display:flex; align-items:center; gap:6px;"><span style="font-size:10px; opacity:0.7; pointer-events:none;">已拉入</span><span class="remove-anchor" style="cursor:pointer; background:rgba(255,255,255,0.25); border-radius:50%; width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; font-weight:bold; font-size:10px;" title="取消錨點">✕</span></div>`;
+                } else {
+                    btn.innerHTML = `<span style="pointer-events:none;">♫ ${reg.name}</span> <span style="font-size:10px; opacity:0.7; pointer-events:none;">拖曳</span>`;
+                }
+                
+                btn.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', reg.name);
+                    btn.style.opacity = '0.5';
+                });
+                
+                btn.addEventListener('dragend', () => {
+                    btn.style.opacity = '0.9';
+                });
+
+                // 點擊右側列表按鈕，讓左側 PDF 跳至對應頁面位置
+                btn.addEventListener('click', (e) => {
+                    // 1) 點擊到 X 按鈕，刪除該錨點
+                    if (e.target.classList.contains('remove-anchor')) {
+                        const idx = pdfAnchors.findIndex(a => a.regionName === reg.name);
+                        if (idx !== -1) {
+                            pdfAnchors.splice(idx, 1);
+                            window.renderPdfAnchorsInWindow(sheetWindow);
+                            window.updateSheetWindowUI(); // 更新為未拉入狀態
+                        }
+                        return; // 終止跳轉
+                    }
+
+                    // 2) 跳轉邏輯
+                    const anchor = pdfAnchors.find(a => a.regionName === reg.name);
+                    if (anchor) {
+                        const pageData = sheetWindow.pdfPagesRendered[anchor.pageNum - 1];
+                        if (pageData) {
+                            const container = sheetWindow.document.getElementById('pdf-viewer-container');
+                            
+                            // 修正：取得當前縮放比例，精準計算錨點的 Y 軸實際位置，並讓其顯示在畫面偏上方
+                            const currentZoom = parseFloat(sheetWindow.document.getElementById('pdf-scale-wrapper').style.zoom) || 1;
+                            const unzoomedY = pageData.container.offsetTop + (pageData.container.offsetHeight * anchor.yRatio);
+                            const targetY = (unzoomedY * currentZoom) - (container.clientHeight / 3);
+                            
+                            container.scrollTo({
+                                top: Math.max(0, targetY),
+                                behavior: 'smooth'
+                            });
+                            
+                            // 高亮該點
+                            const marks = pageData.anchorContainer.querySelectorAll('.anchor-label');
+                            let targetMark = null;
+                            marks.forEach(m => {
+                                if (m.textContent.includes(reg.name)) targetMark = m.parentElement;
+                            });
+                            
+                            if (targetMark) {
+                                targetMark.style.transform = 'translate(-50%, -50%) scale(1.6)';
+                                setTimeout(() => targetMark.style.transform = 'translate(-50%, -50%) scale(1)', 1000);
+                            }
+                        }
+                    } else {
+                        sheetWindow.alert('尚未在文件上設定此區間的錨點！請拖曳此按鈕至左側文件上。');
+                    }
+                });
+                
+                list.appendChild(btn);
+            });
+            
+            window.renderPdfAnchorsInWindow(sheetWindow);
+        };
 
     </script>
 </body>

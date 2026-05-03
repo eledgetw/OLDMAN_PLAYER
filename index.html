@@ -683,35 +683,111 @@
       }
 
       // 解析音訊波形函數
-      function extractAudioWaveform(file) {
+      async function extractAudioWaveform(file) {
         waveformPeaks = [];
-        const audioCtx = new (
-          window.AudioContext || window.webkitAudioContext
-        )();
-        const reader = new FileReader();
-        reader.onload = function (e) {
-          audioCtx
-            .decodeAudioData(e.target.result, function (buffer) {
-              const channelData = buffer.getChannelData(0);
-              // 將取樣數提高到 15000，確保極度放大時仍有高解析度細節
-              const samples = 15000;
-              const step = Math.ceil(channelData.length / samples);
-              for (let i = 0; i < samples; i++) {
-                let max = 0;
-                for (let j = 0; j < step; j++) {
-                  if (i * step + j >= channelData.length) break;
-                  const val = Math.abs(channelData[i * step + j]);
-                  if (val > max) max = val;
-                }
-                waveformPeaks.push(max);
-              }
-              if (duration) renderTimeline(); // 重新渲染以顯示波形
-            })
-            .catch((err) =>
-              console.warn("音訊解析失敗 (可能檔案過大或格式不支援):", err),
+        const isIOS =
+          /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+        if (isIOS) {
+          try {
+            // 動態載入 FFmpeg.wasm (若尚未載入)
+            if (!window.FFmpeg) {
+              await new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src =
+                  "https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js";
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+              });
+            }
+
+            const { createFFmpeg, fetchFile } = FFmpeg;
+            // 初始化 FFmpeg
+            const ffmpeg = createFFmpeg({
+              log: false,
+              corePath:
+                "https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js",
+            });
+            await ffmpeg.load();
+
+            // 將檔案寫入虛擬檔案系統
+            ffmpeg.FS("writeFile", "input.mp4", await fetchFile(file));
+
+            // 執行指令：提取音軌、單聲道、降取樣率為 8000Hz、轉為 mp3
+            await ffmpeg.run(
+              "-i",
+              "input.mp4",
+              "-vn",
+              "-ac",
+              "1",
+              "-ar",
+              "8000",
+              "-b:a",
+              "32k",
+              "output.mp3",
             );
-        };
-        reader.readAsArrayBuffer(file);
+
+            // 讀取處理完的輕量音訊檔
+            const data = ffmpeg.FS("readFile", "output.mp3");
+
+            // 清理虛擬記憶體
+            ffmpeg.FS("unlink", "input.mp4");
+            ffmpeg.FS("unlink", "output.mp3");
+
+            // 使用原生的 AudioContext 解碼輕量化的 mp3
+            const audioCtx = new (
+              window.AudioContext || window.webkitAudioContext
+            )();
+            const audioBuffer = await audioCtx.decodeAudioData(data.buffer);
+            const channelData = audioBuffer.getChannelData(0);
+
+            const samples = 15000;
+            const step = Math.ceil(channelData.length / samples);
+            for (let i = 0; i < samples; i++) {
+              let max = 0;
+              for (let j = 0; j < step; j++) {
+                if (i * step + j >= channelData.length) break;
+                const val = Math.abs(channelData[i * step + j]);
+                if (val > max) max = val;
+              }
+              waveformPeaks.push(max);
+            }
+            if (duration) renderTimeline();
+          } catch (err) {
+            console.warn("iPad FFmpeg 解析波形失敗 (可能遇到跨域限制):", err);
+          }
+        } else {
+          // 原本的桌面版 / Android 處理邏輯
+          const audioCtx = new (
+            window.AudioContext || window.webkitAudioContext
+          )();
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            audioCtx
+              .decodeAudioData(e.target.result, function (buffer) {
+                const channelData = buffer.getChannelData(0);
+                // 將取樣數提高到 15000，確保極度放大時仍有高解析度細節
+                const samples = 15000;
+                const step = Math.ceil(channelData.length / samples);
+                for (let i = 0; i < samples; i++) {
+                  let max = 0;
+                  for (let j = 0; j < step; j++) {
+                    if (i * step + j >= channelData.length) break;
+                    const val = Math.abs(channelData[i * step + j]);
+                    if (val > max) max = val;
+                  }
+                  waveformPeaks.push(max);
+                }
+                if (duration) renderTimeline(); // 重新渲染以顯示波形
+              })
+              .catch((err) =>
+                console.warn("音訊解析失敗 (可能檔案過大或格式不支援):", err),
+              );
+          };
+          reader.readAsArrayBuffer(file);
+        }
       }
 
       let currentVideoName = "";
@@ -2378,9 +2454,9 @@
             `);
         sheetWindow.document.close();
 
-        sheetWindow.onload = () => {
+        setTimeout(() => {
           setupChildWindow(sheetWindow);
-        };
+        }, 100);
       });
 
       // 定義子視窗的邏輯

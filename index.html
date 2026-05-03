@@ -504,8 +504,32 @@
         });
 
         // 移除原生 timeupdate 的時間軸強制連動，完全由虛擬播放引擎 (virtualPlayEngine) 接管
+        // 新增平板背景執行防護：當主頁在背景時 requestAnimationFrame 會暫停，改由 timeupdate 接手維持循環播放
         video.addEventListener('timeupdate', () => {
             if (!duration) return;
+            
+            if (loopRegion && loopRegion.start !== loopRegion.end && !video.paused) {
+                let currentVirtualTime = savedPlayTime;
+                for (let c of clips) {
+                    const sStart = c.sourceStart || 0;
+                    if (video.currentTime >= sStart && video.currentTime <= sStart + (c.end - c.start)) {
+                        currentVirtualTime = c.start + (video.currentTime - sStart);
+                        break;
+                    }
+                }
+                
+                if (currentVirtualTime >= loopRegion.end) {
+                    savedPlayTime = loopRegion.start;
+                    let targetSourceTime = loopRegion.start;
+                    for (let c of clips) {
+                        if (loopRegion.start >= c.start && loopRegion.start < c.end) {
+                            targetSourceTime = (c.sourceStart || 0) + (loopRegion.start - c.start);
+                            break;
+                        }
+                    }
+                    video.currentTime = targetSourceTime;
+                }
+            }
         });
 
         // 播放速度調整

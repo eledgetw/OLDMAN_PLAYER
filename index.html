@@ -954,13 +954,6 @@
           lastSysTime = sysTime;
 
           if (!video.paused) {
-            // 增加虛擬時間 (savedPlayTime 充當全局時間軸)
-            savedPlayTime += delta * video.playbackRate;
-            if (savedPlayTime >= duration) {
-              savedPlayTime = duration;
-              video.pause(); // 到底強制暫停
-            }
-
             // 尋找當前時間點所在的片段 (高軌道優先)
             let activeClip = null;
             for (let c of clips) {
@@ -970,18 +963,29 @@
             }
 
             if (activeClip) {
-              // 確保真實影片時間點與片段內部時間同步
               const targetSourceTime =
                 (activeClip.sourceStart || 0) +
                 (savedPlayTime - activeClip.start);
-              if (Math.abs(video.currentTime - targetSourceTime) > 0.3) {
+
+              // 【核心修復】解決 iPad 卡頓的靈魂邏輯
+              // 如果誤差大於 0.5 秒 (例如剛跳轉、跨片段)，才強制改變影片 currentTime
+              if (Math.abs(video.currentTime - targetSourceTime) > 0.5) {
                 video.currentTime = targetSourceTime;
+              } else {
+                // 正常播放中：反轉主從關係！
+                // 讓影片的「硬體真實播放進度」去推動「全局虛擬時間」
+                // 這樣 iPad 就不會因為微小的掉幀或緩衝，一直被迫執行卡頓的 Seek 操作
+                savedPlayTime =
+                  activeClip.start +
+                  (video.currentTime - (activeClip.sourceStart || 0));
               }
+
               video.style.opacity = "1";
               video.muted = false;
               currentActiveClip = activeClip;
             } else {
-              // 播放到空白區段，黑屏靜音
+              // 播放到空白區段，此時沒有影片實體可依賴，改用系統時間往前走
+              savedPlayTime += delta * video.playbackRate;
               video.style.opacity = "0";
               video.muted = true;
               currentActiveClip = null;
@@ -989,14 +993,29 @@
 
             // 循環播放處理
             if (loopRegion && loopRegion.start !== loopRegion.end) {
-              if (savedPlayTime >= loopRegion.end)
+              if (savedPlayTime >= loopRegion.end) {
                 savedPlayTime = loopRegion.start;
+                // 強制將影片跳回循環起點，避免延遲
+                for (let c of clips) {
+                  if (savedPlayTime >= c.start && savedPlayTime < c.end) {
+                    video.currentTime =
+                      (c.sourceStart || 0) + (savedPlayTime - c.start);
+                    break;
+                  }
+                }
+              }
+            }
+
+            // 到底強制暫停
+            if (savedPlayTime >= duration) {
+              savedPlayTime = duration;
+              video.pause();
             }
           }
 
           // 更新 UI 播放頭 (無論是否播放皆強制同步)
           const maxTime = Math.max(duration, ...clips.map((c) => c.end));
-          const percent = (savedPlayTime / maxTime) * 100;
+          const percent = maxTime > 0 ? (savedPlayTime / maxTime) * 100 : 0;
           playhead.style.left = `${percent}%`;
 
           animFrameId = requestAnimationFrame(virtualPlayEngine);
@@ -2381,9 +2400,10 @@
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>
                 <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';<\/script>
                 <style>
-                    body { margin: 0; background: #111827; color: white; display: flex; flex-direction: column; height: 100vh; font-family: sans-serif; overflow: hidden; }
-                    .toolbar { background: #1f2937; padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #374151; flex-shrink: 0; z-index: 100; }
-                    .main-area { display: flex; flex: 1; overflow: hidden; }
+                    body { margin: 0; background: #111827; color: white; display: flex; flex-direction: column; height: 100dvh; width: 100vw; max-width: 100%; position: fixed; inset: 0; font-family: sans-serif; overflow: hidden; overscroll-behavior: none; }
+                    .toolbar { background: #1f2937; padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #374151; flex-shrink: 0; z-index: 100; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: auto; gap: 8px; }
+                    .toolbar > div { flex-wrap: wrap !important; }
+                    .main-area { display: flex; flex: 1; overflow: hidden; width: 100%; max-width: 100%; box-sizing: border-box; }
                     .pdf-area { flex: 1; overflow: auto; padding: 20px; background: #4b5563; touch-action: pan-x pan-y; }
                     /* 縮放專用容器，確保子元素正常縮放 */
                     #pdf-scale-wrapper { display: flex; flex-direction: column; align-items: center; transform-origin: top left; transition: zoom 0.1s ease-out; }

@@ -28,44 +28,45 @@
 
 ## 🌟 全新功能 (New Features)
 
-* **📄 智慧樂譜同步系統**：支援載入 PDF 樂譜。您可以將定義好的練習區塊（A/B 段）直接拖曳到樂譜上建立錨點，實現「看譜點擊自動跳轉影片」以及「點擊區段樂譜自動跟隨」的完美雙向同步。
-* **📱 完美支援 iPad 與觸控裝置**：針對行動裝置最佳化。支援 PDF 雙指縮放 (Pinch-to-zoom)、時間軸手勢滑動，並內建 iOS 專屬的 FFmpeg 音訊解析引擎，確保在 iPad 上也能順暢提取波形。
-* **✨ 人性化 UI 與動態佈局**：支援全域拖曳匯入（影片、JSON、PDF 一次拖入即可）、自由上下拖曳調整編輯區高度、大字體的變速與播放狀態提示（Toast），讓您的視線不用離開樂器。
+- **📄 智慧樂譜同步系統**：支援載入 PDF 樂譜。您可以將定義好的練習區塊（A/B 段）直接拖曳到樂譜上建立錨點，實現「看譜點擊自動跳轉影片」以及「點擊區段樂譜自動跟隨」的完美雙向同步。
+- **📱 完美支援 iPad 與觸控裝置**：針對行動裝置最佳化。支援 PDF 雙指縮放 (Pinch-to-zoom)、時間軸手勢滑動，並內建 iOS 專屬的 FFmpeg 音訊解析引擎，確保在 iPad 上也能順暢提取波形。
+- **✨ 人性化 UI 與動態佈局**：支援全域拖曳匯入（影片、JSON、PDF 一次拖入即可）、自由上下拖曳調整編輯區高度、大字體的變速與播放狀態提示（Toast），讓您的視線不用離開樂器。
 
 ## 🚀 核心功能
 
-* **智慧區段標記**：直接雙擊任何片段定義區間，或切割 A/B 段落。
-* **精準循環播放**：支援無限循環播放特定選取範圍，強化肌肉記憶。
-* **視覺化節奏感**：渲染高解析度音訊波形（最高達 15,000 個採樣點），具備**峰值顏色漸變**。
-* **變速不變調**：支援 **0.1x 至 4.0x** 速度調整。
-* **虛擬播放引擎**：支援非連續時間軸，遇空隙自動黑屏靜音，模擬專業剪輯軟體。
-* **物理防撞拖拽**：移動片段時具備自動防撞偵測，確保軌道不重疊。
-* **可拖拽區間管理**：下方自定義區間支援**滑鼠拖拽排序**。
-* **完善的復原系統**：支援全域 Undo/Redo（`Ctrl+Z` / `Ctrl+Y`）。
+- **智慧區段標記**：直接雙擊任何片段定義區間，或切割 A/B 段落。
+- **精準循環播放**：支援無限循環播放特定選取範圍，強化肌肉記憶。
+- **視覺化節奏感**：渲染高解析度音訊波形（最高達 15,000 個採樣點），具備**峰值顏色漸變**。
+- **變速不變調**：支援 **0.1x 至 4.0x** 速度調整。
+- **虛擬播放引擎**：支援非連續時間軸，遇空隙自動黑屏靜音，模擬專業剪輯軟體。
+- **物理防撞拖拽**：移動片段時具備自動防撞偵測，確保軌道不重疊。
+- **可拖拽區間管理**：下方自定義區間支援**滑鼠拖拽排序**。
+- **完善的復原系統**：支援全域 Undo/Redo（`Ctrl+Z` / `Ctrl+Y`）。
 
 ## 🛠 影片規格建議
 
 由於播放器需在本地解碼音訊以產生波形，效能表現取決於瀏覽器的記憶體：
-* **建議長度**：30 分鐘以內。
-* **建議大小**：500MB 以內。
+
+- **建議長度**：30 分鐘以內。
+- **建議大小**：500MB 以內。
 
 ## ⌨️ 快捷鍵
 
-| 按鍵 | 功能 |
-| :--- | :--- |
-| **Space (空白鍵)** | 播放 / 暫停 |
-| **A / B** | 切換 **選取模式 (A)** 與 **分割模式 (B)** |
-| **\` (倒引號)** | 針對選取片段快速定義區間 (命名標籤) |
-| **雙擊片段** | 自動啟動「定義區間」並輸入名稱 |
-| **Enter** | 一鍵填滿 (適應螢幕) |
-| **[ / ]** | 全選播放頭以左 / 以右的所有片段 |
-| **方向鍵 ← / →** | 在已定義的區間標籤間快速跳轉 |
-| **Ctrl/Cmd + 方向鍵** | 左右交換區間標籤的排序順序 |
-| **+ / -** | 微調播放速度 (±0.1x) |
-| **1, 2, 3, 4** | 常用倍速切換 (1x, 2x, 3x, 4x) |
-| **5, 8** | 慢動作預設 (0.5x, 0.8x) |
-| **Ctrl/Cmd + Z / Y** | 復原 (Undo) / 重做 (Redo) |
-| **Ctrl/Cmd + S / L** | 快速匯出專案 / 快速匯入專案 |
+| 按鍵                  | 功能                                      |
+| :-------------------- | :---------------------------------------- |
+| **Space (空白鍵)**    | 播放 / 暫停                               |
+| **A / B**             | 切換 **選取模式 (A)** 與 **分割模式 (B)** |
+| **\` (倒引號)**       | 針對選取片段快速定義區間 (命名標籤)       |
+| **雙擊片段**          | 自動啟動「定義區間」並輸入名稱            |
+| **Enter**             | 一鍵填滿 (適應螢幕)                       |
+| **[ / ]**             | 全選播放頭以左 / 以右的所有片段           |
+| **方向鍵 ← / →**      | 在已定義的區間標籤間快速跳轉              |
+| **Ctrl/Cmd + 方向鍵** | 左右交換區間標籤的排序順序                |
+| **+ / -**             | 微調播放速度 (±0.1x)                      |
+| **1, 2, 3, 4**        | 常用倍速切換 (1x, 2x, 3x, 4x)             |
+| **5, 8**              | 慢動作預設 (0.5x, 0.8x)                   |
+| **Ctrl/Cmd + Z / Y**  | 復原 (Undo) / 重做 (Redo)                 |
+| **Ctrl/Cmd + S / L**  | 快速匯出專案 / 快速匯入專案               |
 
 </details>
 
@@ -74,7 +75,7 @@
 <details>
 <summary><h2 style="display: inline-block; cursor: pointer;">🇺🇸 English (Click to expand / collapse)</h2></summary>
 
-OLDMAN'S Player is a lightweight, high-performance, browser-based video tool specifically engineered for music and vocal learners. 
+OLDMAN'S Player is a lightweight, high-performance, browser-based video tool specifically engineered for music and vocal learners.
 
 The project was born out of a real-world frustration: the struggle of mastering complex musical pieces, such as fingerstyle guitar arrangements. Traditional video platforms like YouTube make it incredibly difficult to focus on a specific 5-second riff, slow down the tempo without losing audio clarity, or visualize the rhythm of a percussive technique. This player solves those pain points by providing a non-linear timeline (NLE) experience directly in your browser.
 
@@ -92,44 +93,45 @@ The project was born out of a real-world frustration: the struggle of mastering 
 
 ## 🌟 New Features
 
-* **📄 Smart Sheet Music Sync**: Load PDF sheet music and drag your defined practice regions directly onto the pages to create anchors. Enjoy seamless bi-directional syncing: click the sheet music to control the video, or click the video timeline to scroll the sheet music.
-* **📱 Full iPad & Touch Support**: Optimized for mobile and tablet devices. Features include two-finger pinch-to-zoom for PDFs, touch-friendly timeline scrubbing, and a dedicated FFmpeg audio engine for iOS to ensure smooth waveform extraction.
-* **✨ Humanized UI & Dynamic Layout**: Supports universal drag-and-drop imports (load video, JSON, and PDF all at once), an adjustable workspace (drag the separator to resize the timeline), and large visual toast indicators for speed changes and playback status so you never have to take your eyes off your instrument.
+- **📄 Smart Sheet Music Sync**: Load PDF sheet music and drag your defined practice regions directly onto the pages to create anchors. Enjoy seamless bi-directional syncing: click the sheet music to control the video, or click the video timeline to scroll the sheet music.
+- **📱 Full iPad & Touch Support**: Optimized for mobile and tablet devices. Features include two-finger pinch-to-zoom for PDFs, touch-friendly timeline scrubbing, and a dedicated FFmpeg audio engine for iOS to ensure smooth waveform extraction.
+- **✨ Humanized UI & Dynamic Layout**: Supports universal drag-and-drop imports (load video, JSON, and PDF all at once), an adjustable workspace (drag the separator to resize the timeline), and large visual toast indicators for speed changes and playback status so you never have to take your eyes off your instrument.
 
 ## 🚀 Core Features
 
-* **Intelligent Segmenting**: Double-click to define a region or split clips into A/B sections.
-* **Precision Looping**: Infinite looping for selected ranges to build muscle memory.
-* **Visual Rhythm**: High-resolution audio waveform (up to 15,000 samples) with **Peak Color Gradients**.
-* **Variable Speed Control**: Slow down from **0.1x to 4.0x** without changing the pitch.
-* **Virtual Play Engine**: Automatically mutes and shows a black screen on empty timeline gaps.
-* **Anti-Collision Dragging**: Built-in collision detection prevents clips from overlapping.
-* **Draggable Region Management**: Reorder saved practice regions via drag-and-drop.
-* **Undo/Redo System**: Full state history (`Ctrl+Z` / `Ctrl+Y`).
+- **Intelligent Segmenting**: Double-click to define a region or split clips into A/B sections.
+- **Precision Looping**: Infinite looping for selected ranges to build muscle memory.
+- **Visual Rhythm**: High-resolution audio waveform (up to 15,000 samples) with **Peak Color Gradients**.
+- **Variable Speed Control**: Slow down from **0.1x to 4.0x** without changing the pitch.
+- **Virtual Play Engine**: Automatically mutes and shows a black screen on empty timeline gaps.
+- **Anti-Collision Dragging**: Built-in collision detection prevents clips from overlapping.
+- **Draggable Region Management**: Reorder saved practice regions via drag-and-drop.
+- **Undo/Redo System**: Full state history (`Ctrl+Z` / `Ctrl+Y`).
 
 ## 🛠 Video Guidelines
 
 Because the player decodes audio data locally to generate waveforms, performance is tied to your browser's memory:
-* **Recommended Length**: Under 30 minutes.
-* **Recommended File Size**: Under 500MB.
+
+- **Recommended Length**: Under 30 minutes.
+- **Recommended File Size**: Under 500MB.
 
 ## ⌨️ Hotkeys
 
-| Key | Action |
-| :--- | :--- |
-| **Space** | Play / Pause |
-| **A / B** | Switch between **Select** and **Split** modes |
-| **\` (Backtick)** | Define Region for selected clip |
-| **Double-Click Clip** | Instantly name and define a region |
-| **Enter** | Zoom to Fit |
-| **[ / ]** | Select all clips to the Left / Right of the playhead |
-| **Arrow Left / Right** | Navigate between defined regions |
-| **Ctrl/Cmd + Arrow** | Reorder current region label (Move Left/Right) |
-| **+ / -** | Fine-tune playback speed (±0.1x) |
-| **1, 2, 3, 4** | Instant speed presets (1x, 2x, 3x, 4x) |
-| **5, 8** | Slow-motion presets (0.5x, 0.8x) |
-| **Ctrl/Cmd + Z / Y** | Undo / Redo |
-| **Ctrl/Cmd + S / L** | Quick Save (Export) / Quick Load (Import) |
+| Key                    | Action                                               |
+| :--------------------- | :--------------------------------------------------- |
+| **Space**              | Play / Pause                                         |
+| **A / B**              | Switch between **Select** and **Split** modes        |
+| **\` (Backtick)**      | Define Region for selected clip                      |
+| **Double-Click Clip**  | Instantly name and define a region                   |
+| **Enter**              | Zoom to Fit                                          |
+| **[ / ]**              | Select all clips to the Left / Right of the playhead |
+| **Arrow Left / Right** | Navigate between defined regions                     |
+| **Ctrl/Cmd + Arrow**   | Reorder current region label (Move Left/Right)       |
+| **+ / -**              | Fine-tune playback speed (±0.1x)                     |
+| **1, 2, 3, 4**         | Instant speed presets (1x, 2x, 3x, 4x)               |
+| **5, 8**               | Slow-motion presets (0.5x, 0.8x)                     |
+| **Ctrl/Cmd + Z / Y**   | Undo / Redo                                          |
+| **Ctrl/Cmd + S / L**   | Quick Save (Export) / Quick Load (Import)            |
 
 </details>
 

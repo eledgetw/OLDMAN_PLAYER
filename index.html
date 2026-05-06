@@ -73,7 +73,7 @@
         <button
           id="import-btn"
           data-i18n="import"
-          class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm"
+          class="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-base font-bold shadow-lg transition-colors"
           onclick="document.getElementById('import-input').click()"
         >
           匯入
@@ -2426,10 +2426,38 @@
                                 <path d="M5 6v12l8-6zM15 6h2v12h-2zm4 0h2v12h-2z" />
                             </svg>
                         </button>
-                        <h2 style="margin:0; font-size:18px; display:flex; align-items:center; gap:8px; border-left:2px solid #4b5563; padding-left:16px;">
+                        <h2 style="margin:0; font-size:18px; display:flex; align-items:center; gap:8px; border-left:2px solid #4b5563; padding-left:16px; border-right:2px solid #4b5563; padding-right:16px;">
                             <svg style="width:24px; height:24px; color:#60a5fa;" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13H9.5v-1.25c0-.62-.5-1.12-1.12-1.12H8.25V11.5h3.25V15zM13 9V3.5L18.5 9H13z"/></svg>
                             樂譜
                         </h2>
+                        <div style="display:flex; gap:8px;">
+                            <script>
+                                function setChildSpeed(speed) {
+                                    if(window.opener && typeof window.opener.updateSpeed === 'function') {
+                                        window.opener.updateSpeed(speed);
+                                    }
+                                }
+                                setInterval(function() {
+                                    if(window.opener) {
+                                        var vid = window.opener.document.getElementById('video-player');
+                                        if(vid) {
+                                            var currentSpeed = vid.playbackRate;
+                                            var btns = document.querySelectorAll('.child-speed-btn');
+                                            btns.forEach(function(b) {
+                                                if(parseFloat(b.getAttribute('data-speed')) === currentSpeed) {
+                                                    b.style.background = '#2563eb';
+                                                } else {
+                                                    b.style.background = '#4b5563';
+                                                }
+                                            });
+                                        }
+                                    }
+                                }, 200);
+                            <\/script>
+                            <button class="btn child-speed-btn" data-speed="0.5" style="background:#4b5563; padding:8px 20px; font-weight:bold; font-size:18px;" onclick="setChildSpeed(0.5)">0.5X</button>
+                            <button class="btn child-speed-btn" data-speed="0.8" style="background:#4b5563; padding:8px 20px; font-weight:bold; font-size:18px;" onclick="setChildSpeed(0.8)">0.8X</button>
+                            <button class="btn child-speed-btn" data-speed="1" style="background:#2563eb; padding:8px 20px; font-weight:bold; font-size:18px;" onclick="setChildSpeed(1.0)">1.0X</button>
+                        </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:16px;">
                         <!-- 縮放操作區 -->
@@ -2442,7 +2470,7 @@
                             <button class="btn" id="zoom-fit-btn" style="padding:2px 10px; font-size:12px; background:#10b981;">放寬</button>
                             <button class="btn" id="zoom-fit-height-btn" style="padding:2px 10px; font-size:12px; background:#f59e0b;">放直</button>
                             <div style="width: 1px; height: 20px; background: #6b7280; margin: 0 4px;"></div>
-                            <button class="btn toggle-sidebar-btn" style="padding:2px 10px; font-size:12px; background:#4b5563; white-space:nowrap;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); s.classList.toggle('collapsed'); const isCollapsed = s.classList.contains('collapsed'); this.textContent = isCollapsed ? '展開側欄' : '收合側欄'; resizer.style.display = isCollapsed ? 'none' : 'block';">收合側欄</button>
+                            <button class="btn toggle-sidebar-btn" style="padding:2px 10px; font-size:12px; background:#4b5563; white-space:nowrap;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); s.classList.toggle('collapsed'); const isCollapsed = s.classList.contains('collapsed'); this.textContent = isCollapsed ? '展開' : '收合'; resizer.style.display = isCollapsed ? 'none' : 'block';">收合</button>
                         </div>
                         <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
                         <button class="btn" onclick="document.getElementById('pdf-upload').click()">載入 PDF</button>

@@ -200,6 +200,18 @@
         playsinline
       ></video>
 
+            <div id="crop-box" class="fixed border-2 border-blue-500 bg-blue-500/30 pointer-events-none hidden z-50"></div>
+
+            <button
+        id="crop-mode-btn"
+        class="absolute right-4 top-24 bg-gray-800/80 hover:bg-gray-700 text-white p-3 rounded-full shadow-lg backdrop-blur-sm transition-all z-40"
+        title="框選放大"
+      >
+        <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8V5a2 2 0 012-2h3m10 0h3a2 2 0 012 2v3m-2 13h-3a2 2 0 01-2-2v-3m-10 0H5a2 2 0 01-2-2v-3" />
+        </svg>
+      </button>
+
       <div
         id="play-pause-overlay"
         class="absolute inset-0 flex items-center justify-center pointer-events-none z-50 opacity-0 transition-opacity duration-300"
@@ -558,10 +570,126 @@
       const speedToast = document.getElementById("speed-toast");
       const playPauseOverlay = document.getElementById("play-pause-overlay");
       const playPauseIcon = document.getElementById("play-pause-icon");
+      const cropModeBtn = document.getElementById("crop-mode-btn");
+      const cropBox = document.getElementById("crop-box");
       let playPauseTimer = null;
+
+      // 框選放大狀態
+      let isCropMode = false;
+      let isCropping = false;
+      let isZoomed = false;
+      let justCropped = false; // 新增：防止放開滑鼠的瞬間觸發點擊導致立刻復原
+      let cropStartX = 0;
+      let cropStartY = 0;
+      
+      if (cropModeBtn) {
+        cropModeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          isCropMode = !isCropMode;
+          if (isCropMode) {
+            cropModeBtn.classList.replace("bg-gray-800/80", "bg-blue-600");
+            video.style.cursor = "crosshair";
+            // 如果原本是放大狀態，則先復原
+            if (isZoomed) {
+              video.style.transform = '';
+              video.style.transformOrigin = '';
+              isZoomed = false;
+            }
+          } else {
+            cropModeBtn.classList.replace("bg-blue-600", "bg-gray-800/80");
+            video.style.cursor = "pointer";
+            cropBox.classList.add("hidden");
+            isCropping = false;
+          }
+        });
+      }
+
+      video.addEventListener("mousedown", (e) => {
+        if (!isCropMode) return;
+        e.preventDefault(); // 新增：阻止瀏覽器預設的影片拖曳行為，防止吃掉滑鼠事件
+        isCropping = true;
+        cropStartX = e.clientX;
+        cropStartY = e.clientY;
+        cropBox.style.left = `${cropStartX}px`;
+        cropBox.style.top = `${cropStartY}px`;
+        cropBox.style.width = '0px';
+        cropBox.style.height = '0px';
+        cropBox.classList.remove("hidden");
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isCropping) return;
+        const left = Math.min(cropStartX, e.clientX);
+        const top = Math.min(cropStartY, e.clientY);
+        const width = Math.abs(e.clientX - cropStartX);
+        const height = Math.abs(e.clientY - cropStartY);
+
+        cropBox.style.left = `${left}px`;
+        cropBox.style.top = `${top}px`;
+        cropBox.style.width = `${width}px`;
+        cropBox.style.height = `${height}px`;
+      });
+
+      window.addEventListener("mouseup", (e) => {
+        if (!isCropping) return;
+        isCropping = false;
+        cropBox.classList.add("hidden");
+        
+        const width = Math.abs(e.clientX - cropStartX);
+        const height = Math.abs(e.clientY - cropStartY);
+        
+        // 框選範圍太小則忽略，避免誤觸
+        if (width < 20 || height < 20) {
+          isCropMode = false;
+          cropModeBtn.classList.replace("bg-blue-600", "bg-gray-800/80");
+          video.style.cursor = "pointer";
+          return;
+        }
+
+        const left = Math.min(cropStartX, e.clientX);
+        const top = Math.min(cropStartY, e.clientY);
+        
+        const rect = video.getBoundingClientRect();
+        const containerRect = video.parentElement.getBoundingClientRect();
+        
+        // 計算中心點相對於影片元素的百分比
+        const originX = ((left - rect.left + width / 2) / rect.width) * 100;
+        const originY = ((top - rect.top + height / 2) / rect.height) * 100;
+        
+        // 忽略原影片大小，以容器尺寸為基準計算最大縮放比例
+        const scale = Math.min(containerRect.width / width, containerRect.height / height);
+        
+        // 計算平移量，使框選中心點對齊畫面正中央
+        const cropCenterX = left + width / 2;
+        const cropCenterY = top + height / 2;
+        const containerCenterX = containerRect.left + containerRect.width / 2;
+        const containerCenterY = containerRect.top + containerRect.height / 2;
+        const translateX = containerCenterX - cropCenterX;
+        const translateY = containerCenterY - cropCenterY;
+
+        video.style.transformOrigin = `${originX}% ${originY}%`;
+        video.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+        video.style.transition = 'transform 0.3s ease';
+
+        isZoomed = true;
+        isCropMode = false; // 結束框選模式
+        justCropped = true; // 標記剛剛完成框選
+        setTimeout(() => { justCropped = false; }, 200); // 200ms 後解除，防禦 click 事件誤判
+
+        cropModeBtn.classList.replace("bg-blue-600", "bg-gray-800/80");
+        video.style.cursor = "pointer";
+      });
 
       // 影片點擊播放/暫停事件
       video.addEventListener("click", () => {
+        if (isCropMode || justCropped) return; // 新增：若剛框選完，直接略過這次點擊事件
+        if (isZoomed) {
+          // 再點擊一次畫面則復原
+          video.style.transform = '';
+          video.style.transformOrigin = '';
+          isZoomed = false;
+          return;
+        }
         if (!duration) return;
 
         if (video.paused) {

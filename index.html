@@ -1168,11 +1168,8 @@
       video.addEventListener("timeupdate", () => {
         if (!duration) return;
 
-        if (
-          loopRegion &&
-          loopRegion.start !== loopRegion.end &&
-          !video.paused
-        ) {
+        if (loopRegion && loopRegion.start !== loopRegion.end) {
+          // 透過當前影片真實硬體時間，反推全局虛擬時間
           let currentVirtualTime = savedPlayTime;
           for (let c of clips) {
             const sStart = c.sourceStart || 0;
@@ -1185,7 +1182,8 @@
             }
           }
 
-          if (currentVirtualTime >= loopRegion.end) {
+          // 精準防禦：只要虛擬時間一超過結束點，不論是否切換視窗，立刻強制同步並跳回
+          if (currentVirtualTime >= loopRegion.end || video.currentTime >= video.duration) {
             savedPlayTime = loopRegion.start;
             let targetSourceTime = loopRegion.start;
             for (let c of clips) {
@@ -1196,6 +1194,9 @@
               }
             }
             video.currentTime = targetSourceTime;
+          } else if (!video.paused) {
+            // 如果在正常播放中且未到底，由影片進度持續強刷虛擬時間，防止切換視窗時間凍結
+            savedPlayTime = currentVirtualTime;
           }
         }
       });
@@ -2640,7 +2641,7 @@
         const zoomDisplay = doc.getElementById("zoom-display");
 
         // 標籤大小控制邏輯
-        window.globalAnchorScale = window.globalAnchorScale || 1.0;
+        window.globalAnchorScale = window.globalAnchorScale || 0.5;
         const updateAnchorSize = (delta) => {
           window.globalAnchorScale = Math.max(
             0.3,
@@ -3086,13 +3087,16 @@
 
               // 同步主畫面狀態
               activeRegionIndex = regIndex;
-              savedPlayTime = reg.start;
-              video.currentTime = reg.start;
-              loopRegion = { start: reg.start, end: reg.end };
+              savedPlayTime = parseFloat(reg.start);
+              video.currentTime = parseFloat(reg.start);
+              loopRegion = { start: parseFloat(reg.start), end: parseFloat(reg.end) };
               renderTimeline();
               renderRegions();
 
-              if (video.paused) video.play();
+              if (video.paused) {
+                lastSysTime = performance.now();
+                video.play();
+              }
 
               // 自動平滑捲動主畫面時間軸
               const maxTime = Math.max(duration, ...clips.map((c) => c.end));
@@ -3165,16 +3169,19 @@
             );
             if (regIndex !== -1) {
               activeRegionIndex = regIndex;
-              savedPlayTime = customRegions[regIndex].start;
-              video.currentTime = customRegions[regIndex].start;
+              savedPlayTime = parseFloat(customRegions[regIndex].start);
+              video.currentTime = parseFloat(customRegions[regIndex].start);
               loopRegion = {
-                start: customRegions[regIndex].start,
-                end: customRegions[regIndex].end,
+                start: parseFloat(customRegions[regIndex].start),
+                end: parseFloat(customRegions[regIndex].end),
               };
               renderTimeline();
               renderRegions(); // 觸發主程式下方按鈕反白
 
-              if (video.paused) video.play();
+              if (video.paused) {
+                lastSysTime = performance.now();
+                video.play();
+              }
 
               // 自動平滑捲動主畫面時間軸
               const maxTime = Math.max(duration, ...clips.map((c) => c.end));

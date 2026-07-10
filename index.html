@@ -213,6 +213,30 @@
         </svg>
       </button>
 
+      <button
+        id="prev-region-btn"
+        class="absolute right-4 top-[152px] bg-gray-800/80 hover:bg-gray-700 text-blue-400 p-3 rounded-full shadow-lg backdrop-blur-sm transition-all z-40 font-bold text-lg flex items-center justify-center w-12 h-12"
+        title="上一段區間"
+      >
+        ←
+      </button>
+
+      <button
+        id="next-region-btn"
+        class="absolute right-4 top-[212px] bg-gray-800/80 hover:bg-gray-700 text-blue-400 p-3 rounded-full shadow-lg backdrop-blur-sm transition-all z-40 font-bold text-lg flex items-center justify-center w-12 h-12"
+        title="下一段區間"
+      >
+        →
+      </button>
+
+      <button
+        id="fav-region-btn"
+        class="absolute right-4 top-[272px] bg-gray-800/80 hover:bg-gray-700 text-yellow-400 p-3 rounded-full shadow-lg backdrop-blur-sm transition-all z-40 font-bold text-base flex items-center justify-center w-12 h-12"
+        title="將當前區間加入/取消我的最愛"
+      >
+        ★
+      </button>
+
       <div
         id="play-pause-overlay"
         class="absolute inset-0 flex items-center justify-center pointer-events-none z-50 opacity-0 transition-opacity duration-300"
@@ -574,6 +598,54 @@
       const cropModeBtn = document.getElementById("crop-mode-btn");
       const cropBox = document.getElementById("crop-box");
       let playPauseTimer = null;
+
+      const prevRegionBtn = document.getElementById("prev-region-btn");
+      const nextRegionBtn = document.getElementById("next-region-btn");
+      const favRegionBtn = document.getElementById("fav-region-btn");
+
+      if (prevRegionBtn) {
+        prevRegionBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (customRegions.length === 0) return;
+          let targetIdx = activeRegionIndex - 1;
+          if (activeRegionIndex === -1) {
+            targetIdx = customRegions.length - 1;
+          } else if (targetIdx < 0) {
+            targetIdx = 0;
+          }
+          const buttons = regionContainer.querySelectorAll("div");
+          if (buttons && buttons[targetIdx]) {
+            buttons[targetIdx].click();
+          }
+        });
+      }
+
+      if (nextRegionBtn) {
+        nextRegionBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (customRegions.length === 0) return;
+          let targetIdx = activeRegionIndex + 1;
+          if (activeRegionIndex === -1) {
+            targetIdx = 0;
+          } else if (targetIdx >= customRegions.length) {
+            targetIdx = customRegions.length - 1;
+          }
+          const buttons = regionContainer.querySelectorAll("div");
+          if (buttons && buttons[targetIdx]) {
+            buttons[targetIdx].click();
+          }
+        });
+      }
+
+      if (favRegionBtn) {
+        favRegionBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (customRegions.length === 0 || activeRegionIndex === -1) return;
+          customRegions[activeRegionIndex].favorite = !customRegions[activeRegionIndex].favorite;
+          saveState();
+          renderRegions();
+        });
+      }
 
       // 框選放大狀態
       let isCropMode = false;
@@ -1934,6 +2006,18 @@
 
       function renderRegions() {
         regionContainer.innerHTML = "";
+        
+        // 更新右側獨立最愛按鈕的視覺外觀
+        if (favRegionBtn) {
+          if (activeRegionIndex !== -1 && customRegions[activeRegionIndex] && customRegions[activeRegionIndex].favorite) {
+            favRegionBtn.style.backgroundColor = "#eab308"; // 亮黃色背景
+            favRegionBtn.style.color = "#ffffff";
+          } else {
+            favRegionBtn.style.backgroundColor = "";
+            favRegionBtn.style.color = "";
+          }
+        }
+
         customRegions.forEach((reg, index) => {
           const isActive = activeRegionIndex === index;
           const btn = document.createElement("div");
@@ -1991,6 +2075,9 @@
               other.end - other.start > reg.end - reg.start,
           );
 
+          // 我的最愛按鈕改用亮眼的翡翠綠/黃金色雙重厚邊框以及外發光來顯示不同顏色的框
+          const favBorder = reg.favorite ? "border-2 border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.8)]" : "border border-transparent";
+
           const bgClass = isContained
             ? isActive
               ? "bg-yellow-400 ring-2 ring-white shadow-lg scale-105 text-gray-900"
@@ -2005,9 +2092,8 @@
               : "text-yellow-200 hover:text-white"
             : "text-purple-200 hover:text-white";
 
-          // 預設加入透明左邊框 (border-l-4 border-transparent) 以防佈局跳動
-          btn.className = `px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-move transition-all border-l-4 border-transparent ${bgClass}`;
-          btn.innerHTML = `${reg.name} <span class="${closeClass} font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===${index})activeRegionIndex=-1; saveState(); renderRegions(); renderTimeline();">×</span>`;
+          btn.className = `px-3 py-1 rounded-full text-xs flex items-center gap-2 cursor-move transition-all ${favBorder} ${bgClass}`;
+          btn.innerHTML = `<span>${reg.name}</span> <span class="${closeClass} font-bold ml-1 cursor-pointer" onclick="event.stopPropagation(); customRegions.splice(${index},1); if(activeRegionIndex===${index})activeRegionIndex=-1; saveState(); renderRegions(); renderTimeline();">×</span>`;
           btn.onclick = () => {
             activeRegionIndex = index;
             savedPlayTime = reg.start;

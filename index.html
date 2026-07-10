@@ -589,6 +589,7 @@
           if (isCropMode) {
             cropModeBtn.classList.replace("bg-gray-800/80", "bg-blue-600");
             video.style.cursor = "crosshair";
+            if (video.parentElement) video.parentElement.style.cursor = "crosshair";
             // 如果原本是放大狀態，則先復原
             if (isZoomed) {
               video.style.transform = '';
@@ -598,13 +599,14 @@
           } else {
             cropModeBtn.classList.replace("bg-blue-600", "bg-gray-800/80");
             video.style.cursor = "pointer";
+            if (video.parentElement) video.parentElement.style.cursor = "";
             cropBox.classList.add("hidden");
             isCropping = false;
           }
         });
       }
 
-      video.addEventListener("mousedown", (e) => {
+      video.parentElement.addEventListener("mousedown", (e) => {
         if (!isCropMode) return;
         e.preventDefault(); // 新增：阻止瀏覽器預設的影片拖曳行為，防止吃掉滑鼠事件
         isCropping = true;
@@ -1755,6 +1757,9 @@
         const t = video.currentTime;
 
         switch (e.key.toLowerCase()) {
+          case "z":
+            if (cropModeBtn) cropModeBtn.click();
+            break;
           case "5":
             updateSpeed(0.5);
             break;

@@ -2596,7 +2596,9 @@
       document.addEventListener("touchend", stopResize);
 
       // --- 樂譜功能 (另開新視窗) ---
-      let sheetWindow = null;
+            let sheetWindow = null;
+      let pdfTextAnnotations = []; // 儲存文字註解項目
+      let activeTextId = null; // 目前選取中的文字項目 id（移到外層，讓 renderPdfTextAnnotations 也能存取）
       const sheetMusicBtn = document.getElementById("sheet-music-btn");
 
       sheetMusicBtn.addEventListener("click", () => {
@@ -2609,13 +2611,12 @@
         // 開啟新視窗
         sheetWindow = window.open("", "_blank", "width=1100,height=800");
 
-        // 寫入新視窗的 HTML 架構 (加入縮放控制與觸控手勢綁定容器)
+        // 寫入新視窗的 HTML 架構 (加入文字編輯面板與觸控手勢綁定容器)
         sheetWindow.document.write(`
             <!DOCTYPE html>
             <html lang="zh-TW">
             <head>
                 <meta charset="UTF-8">
-                <!-- 禁止原生縮放，改由程式控制確保佈局不跑版 -->
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                 <title>樂譜編輯模式</title>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>
@@ -2624,7 +2625,7 @@
                     body { margin: 0; background: #111827; color: white; display: flex; flex-direction: column; height: 100dvh; width: 100vw; max-width: 100%; position: fixed; inset: 0; font-family: sans-serif; overflow: hidden; overscroll-behavior: none; }
                     .toolbar { background: #1f2937; padding: 12px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #374151; flex-shrink: 0; z-index: 100; width: 100%; max-width: 100%; box-sizing: border-box; overflow-x: auto; gap: 8px; }
                     .toolbar > div { flex-wrap: wrap !important; }
-                    .main-area { display: flex; flex: 1; overflow: hidden; width: 100%; max-width: 100%; box-sizing: border-box; }
+                    .main-area { display: flex; flex: 1; overflow: hidden; width: 100%; max-width: 100%; box-sizing: border-box; position: relative; }
                     .pdf-area { flex: 1; overflow: auto; padding: 20px; background: #4b5563; touch-action: pan-x pan-y; }
                     /* 縮放專用容器，確保子元素正常縮放 */
                     #pdf-scale-wrapper { display: flex; flex-direction: column; align-items: center; transform-origin: top left; transition: zoom 0.1s ease-out; }
@@ -2637,6 +2638,28 @@
                     .anchor-mark { position: absolute; transform: translate(-50%, -50%) scale(var(--anchor-scale, 1)); cursor: pointer; transition: transform 0.2s; pointer-events: auto; }
                     .anchor-mark:hover { transform: translate(-50%, -50%) scale(calc(var(--anchor-scale, 1) * 1.15)); z-index: 50; }
                     .anchor-label { background-color:#9333ea; border:4px solid #facc15; color:white; font-size:36px; padding:8px 24px; border-radius:9999px; white-space:nowrap; box-shadow:0 8px 12px rgba(0,0,0,0.3); font-weight: bold; }
+
+                    /* 文字註解標籤樣式 */
+                    .sheet-text-item { position: absolute; transform: translate(-50%, -50%); cursor: grab; pointer-events: auto; user-select: none; z-index: 30; border-radius: 6px; box-sizing: border-box; }
+                    .sheet-text-item.selected { outline: 2px dashed #3b82f6; outline-offset: 4px; }
+                    .sheet-text-content { outline: none; min-width: 20px; min-height: 20px; padding: 4px 8px; white-space: pre-wrap; word-break: break-word; line-height: 1.3; }
+
+                    /* 附圖面板樣式 */
+                    #text-editor-panel { position: absolute; top: 12px; right: 16px; width: 230px; background: #ffffff; color: #1e293b; border-radius: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3); z-index: 200; font-size: 12px; border: 1px solid #e2e8f0; display: none; overflow: hidden; }
+                    .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 4px 14px; cursor: move; }
+                    .panel-header-bar { width: 42px; height: 4px; background: #cbd5e1; border-radius: 9999px; margin: 0 auto; }
+                    .panel-section { padding: 8px 14px; }
+                    .panel-title { font-weight: 700; color: #1e293b; margin-bottom: 8px; font-size: 13px; }
+                    .color-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+                    .color-btn { width: 38px; height: 38px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.12); cursor: pointer; position: relative; display: flex; align-items: center; justify-content: center; transition: transform 0.1s; }
+                    .color-btn:hover { transform: scale(1.05); }
+                    .color-btn.active { outline: 2.5px solid #6366f1; outline-offset: 2px; }
+                    .checker-bg { background-image: linear-gradient(45deg, #e5e7eb 25%, transparent 25%), linear-gradient(-45deg, #e5e7eb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e7eb 75%), linear-gradient(-45deg, transparent 75%, #e5e7eb 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0px; background-color: #ffffff; }
+                    
+                    .segmented-control { display: flex; background: #f1f5f9; border-radius: 10px; padding: 4px; gap: 4px; align-items: center; }
+                    .segment-item { flex: 1; display: flex; align-items: center; justify-content: center; height: 34px; border-radius: 8px; cursor: pointer; border: 1.5px solid transparent; background: transparent; color: #334155; font-size: 14px; transition: background 0.15s; }
+                    .segment-item:hover { background: #e2e8f0; }
+                    .segment-item.active { background: #ffffff; border-color: #818cf8; color: #4338ca; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
                 </style>
             </head>
             <body>
@@ -2676,8 +2699,10 @@
                             <button class="btn child-speed-btn" data-speed="1" style="background:#2563eb; padding:8px 20px; font-weight:bold; font-size:18px;" onclick="setChildSpeed(1.0)">1.0X</button>
                         </div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:16px;">
-                        <!-- 縮放操作區 -->
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <button class="btn" id="text-tool-btn" style="background:#4b5563; font-weight:bold; display:flex; align-items:center; gap:4px; font-size:15px; padding:6px 14px;" title="文字工具 (點擊PDF任意處新增文字)">
+                            <span style="font-family:serif; font-size:18px;">T</span> 文字
+                        </button>
                         <div style="display:flex; align-items:center; gap:8px; background:#374151; padding:4px 12px; border-radius:4px;">
                             <button class="btn" id="anchor-size-up" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="放大標籤">↑</button>
                             <button class="btn" id="anchor-size-down" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="縮小標籤">↓</button>
@@ -2699,7 +2724,96 @@
                             <div id="pdf-placeholder" style="color:#9ca3af; margin-top:80px; font-size:15px; text-align:center;">請載入 PDF 文件。支援平板雙指縮放與滑鼠滾輪。</div>
                         </div>
                     </div>
-                    <!-- 加上可拖曳的調整寬度控制棒 -->
+
+                    <div id="text-editor-panel">
+                        <div class="panel-header">
+                            <div class="panel-header-bar"></div>
+                            <button id="close-text-panel" style="background:none; border:none; color:#64748b; font-size:16px; cursor:pointer; font-weight:bold; line-height:1;">⌃</button>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">邊框顏色 (Stroke)</div>
+                            <div class="color-grid" id="stroke-color-grid">
+                                <div class="color-btn active" data-stroke="#1e293b" style="background:#1e293b;" title="黑色"></div>
+                                <div class="color-btn" data-stroke="#dc2626" style="background:#dc2626;" title="紅色"></div>
+                                <div class="color-btn" data-stroke="#16a34a" style="background:#16a34a;" title="綠色"></div>
+                                <div class="color-btn" data-stroke="#2563eb" style="background:#2563eb;" title="藍色"></div>
+                                <div class="color-btn" data-stroke="#ea580c" style="background:#ea580c;" title="橘色"></div>
+                                <div class="color-btn" data-stroke="#facc15" style="background:#facc15;" title="黃色"></div>
+                                <div class="color-btn" data-stroke="#3e2723" style="background:#3e2723;" title="深褐"></div>
+                                <div class="color-btn" data-stroke="#8d6e63" style="background:#8d6e63;" title="淺褐"></div>
+                            </div>
+                        </div>
+                                                <div class="panel-section">
+                            <div class="panel-title">背景顏色 (Background)</div>
+                            <div class="color-grid" style="grid-template-columns: repeat(6, 1fr);" id="bg-color-grid">
+                                <div class="color-btn checker-bg active" data-bg="transparent" title="透明"></div>
+                                <div class="color-btn" data-bg="#ffffff" style="background:#ffffff; border:1px solid #cbd5e1;" title="白色"></div>
+                                <div class="color-btn" data-bg="#fecaca" style="background:#fecaca;" title="粉紅"></div>
+                                <div class="color-btn" data-bg="#bbf7d0" style="background:#bbf7d0;" title="淺綠"></div>
+                                <div class="color-btn" data-bg="#bfdbfe" style="background:#bfdbfe;" title="淺藍"></div>
+                                <div class="color-btn" data-bg="#fef08a" style="background:#fef08a;" title="淺黃"></div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">線條粗細 (Width)</div>
+                            <div class="segmented-control" id="border-width-control">
+                                <div class="segment-item active" data-width="1"><div style="width:24px; height:2px; background:#1e293b; border-radius:1px;"></div></div>
+                                <div class="segment-item" data-width="2"><div style="width:24px; height:4px; background:#1e293b; border-radius:2px;"></div></div>
+                                <div class="segment-item" data-width="4"><div style="width:24px; height:6px; background:#1e293b; border-radius:3px;"></div></div>
+                            </div>
+                        </div>
+                                                <div class="panel-section">
+                            <div class="panel-title">線條樣式 (Style)</div>
+                            <div class="segmented-control" id="border-style-control">
+                                <div class="segment-item" data-style="none" title="無邊框"><div style="font-size:11px; color:#94a3b8;">無</div></div>
+                                <div class="segment-item active" data-style="solid"><div style="width:26px; border-top:2px solid #1e293b;"></div></div>
+                                <div class="segment-item" data-style="dashed"><div style="width:26px; border-top:2px dashed #1e293b;"></div></div>
+                                <div class="segment-item" data-style="dotted"><div style="width:26px; border-top:2px dotted #1e293b;"></div></div>
+                            </div>
+                        </div>
+                                                <div class="panel-section">
+                            <div class="panel-title">字體大小 (Font Size)</div>
+                            <div class="segmented-control" style="background:#f8fafc; border:1px solid #e2e8f0;">
+                                <div class="segment-item" id="font-size-dec" style="font-weight:bold; font-size:18px;">－</div>
+                                <div style="flex:1.5; text-align:center; font-weight:700; font-size:16px; color:#1e293b;" id="font-size-val">24</div>
+                                <div class="segment-item" id="font-size-inc" style="font-weight:bold; font-size:18px;">＋</div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">文字格式 (Format)</div>
+                            <div class="segmented-control" id="text-format-control">
+                                <div class="segment-item" data-format="bold" title="粗體" style="font-weight:900; font-size:16px;">B</div>
+                                <div class="segment-item" data-format="italic" title="斜體" style="font-style:italic; font-size:16px;">I</div>
+                                <div class="segment-item" data-format="underline" title="底線" style="text-decoration:underline; font-size:16px;">U</div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">文字對齊 (Align)</div>
+                            <div class="segmented-control" id="text-align-control">
+                                <div class="segment-item" data-align="left" title="靠左">
+                                    <svg style="width:18px; height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h14"/></svg>
+                                </div>
+                                <div class="segment-item active" data-align="center" title="置中">
+                                    <svg style="width:18px; height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M5 18h14"/></svg>
+                                </div>
+                                <div class="segment-item" data-align="right" title="靠右">
+                                    <svg style="width:18px; height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M10 12h10M6 18h14"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="panel-section" style="padding-bottom:14px;">
+                            <div class="panel-title">書寫方向 (Direction)</div>
+                            <div class="segmented-control" id="writing-dir-control">
+                                <div class="segment-item active" data-dir="horizontal" title="橫向">
+                                    <svg style="width:18px; height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                                </div>
+                                <div class="segment-item" data-dir="vertical" title="直向">
+                                    <svg style="width:18px; height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v16M12 4v16M18 4v16"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="v-resizer" style="width: 6px; background: #374151; cursor: col-resize; flex-shrink: 0; z-index: 60; transition: background 0.2s; border-left: 1px solid #1f2937; border-right: 1px solid #1f2937;" onmouseover="this.style.background='#60a5fa'" onmouseout="this.style.background='#374151'"></div>
                     <style>
                         .sidebar.collapsed { min-width: 0 !important; width: 0 !important; padding: 0 !important; border-left: none !important; overflow: hidden; }
@@ -2753,7 +2867,182 @@
           window.globalAnchorScale,
         );
 
-        // 加入左右寬度拖曳調整邏輯 (支援滑鼠與觸控)
+                // 文字功能狀態
+        let isTextMode = false;
+        const textToolBtn = doc.getElementById("text-tool-btn");
+        const textPanel = doc.getElementById("text-editor-panel");
+
+                // 全域文字樣式
+        let currentTextProps = {
+          stroke: "#dc2626", // 預設亮紅
+          bg: "#fef08a",     // 預設淺黃底
+          borderWidth: 2,
+          borderStyle: "solid",
+          fontSize: 24,
+          align: "center",
+          direction: "horizontal",
+          bold: false,
+          italic: false,
+          underline: false,
+        };
+
+        if (textPanel) {
+          textPanel.style.maxHeight = "calc(100vh - 80px)";
+          textPanel.style.overflowY = "auto";
+          textPanel.style.overscrollBehavior = "contain";
+        }
+
+        // 面板拖曳功能
+        const panelHeader = doc.querySelector(".panel-header");
+        if (panelHeader && textPanel) {
+          let isDraggingPanel = false;
+          let panelStartX = 0, panelStartY = 0;
+          let initialPanelLeft = 0, initialPanelTop = 0;
+
+          const onPanelDragStart = (e) => {
+            if (e.target.closest("#close-text-panel")) return;
+            isDraggingPanel = true;
+            const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+            panelStartX = clientX;
+            panelStartY = clientY;
+            const rect = textPanel.getBoundingClientRect();
+            initialPanelLeft = rect.left;
+            initialPanelTop = rect.top;
+            textPanel.style.right = "auto";
+            textPanel.style.bottom = "auto";
+            textPanel.style.left = initialPanelLeft + "px";
+            textPanel.style.top = initialPanelTop + "px";
+          };
+
+          const onPanelDragMove = (e) => {
+            if (!isDraggingPanel) return;
+            e.preventDefault();
+            const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+            const dx = clientX - panelStartX;
+            const dy = clientY - panelStartY;
+            textPanel.style.left = Math.max(10, Math.min(doc.body.clientWidth - textPanel.offsetWidth - 10, initialPanelLeft + dx)) + "px";
+            textPanel.style.top = Math.max(10, Math.min(doc.body.clientHeight - textPanel.offsetHeight - 10, initialPanelTop + dy)) + "px";
+          };
+
+          const onPanelDragEnd = () => {
+            isDraggingPanel = false;
+          };
+
+          panelHeader.addEventListener("pointerdown", onPanelDragStart);
+          win.addEventListener("pointermove", onPanelDragMove);
+          win.addEventListener("pointerup", onPanelDragEnd);
+        }
+
+        function updateTextButtonUI() {
+          if (!textToolBtn) return;
+          if (isTextMode) {
+            textToolBtn.style.setProperty("background", "#2563eb", "important");
+            textToolBtn.style.setProperty("color", "#ffffff", "important");
+            if (pdfViewerContainer) pdfViewerContainer.style.cursor = "crosshair";
+          } else {
+            textToolBtn.style.setProperty("background", "#4b5563", "important");
+            textToolBtn.style.setProperty("color", "white", "important");
+            if (pdfViewerContainer) pdfViewerContainer.style.cursor = "default";
+          }
+        }
+
+                                if (textToolBtn) {
+          textToolBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isTextMode = !isTextMode;
+            updateTextButtonUI();
+            if (isTextMode && textPanel) {
+              textPanel.style.display = "block";
+              syncPanelUI(currentTextProps);
+            }
+          };
+        }
+
+        const closeTextPanelBtn = doc.getElementById("close-text-panel");
+        if (closeTextPanelBtn) {
+          closeTextPanelBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (textPanel) textPanel.style.display = "none";
+            if (activeTextId) {
+              const el = doc.getElementById(`text-item-${activeTextId}`);
+              if (el) el.classList.remove("selected");
+              activeTextId = null;
+            }
+          };
+        }
+
+        // 面板樣式選取切換與更新邏輯
+        function updateActiveTextProps(mutator) {
+          mutator(currentTextProps);
+          if (activeTextId) {
+            const item = pdfTextAnnotations.find((t) => t.id === activeTextId);
+            if (item) {
+              mutator(item);
+              window.renderPdfTextAnnotations(win);
+              try { saveState(); } catch (err) {}
+            }
+          }
+          syncPanelUI(currentTextProps);
+        }
+
+        function syncPanelUI(item) {
+          doc.querySelectorAll("#stroke-color-grid .color-btn").forEach((b) => {
+            b.classList.toggle("active", b.dataset.stroke === item.stroke);
+          });
+          doc.querySelectorAll("#bg-color-grid .color-btn").forEach((b) => {
+            b.classList.toggle("active", b.dataset.bg === item.bg);
+          });
+          doc.querySelectorAll("#border-width-control .segment-item").forEach((b) => {
+            b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth);
+          });
+          doc.querySelectorAll("#border-style-control .segment-item").forEach((b) => {
+            b.classList.toggle("active", b.dataset.style === item.borderStyle);
+          });
+          const fontSizeEl = doc.getElementById("font-size-val");
+          if (fontSizeEl) fontSizeEl.textContent = item.fontSize;
+          doc.querySelectorAll("#text-align-control .segment-item").forEach((b) => {
+            b.classList.toggle("active", b.dataset.align === item.align);
+          });
+                    doc.querySelectorAll("#writing-dir-control .segment-item").forEach((b) => {
+            b.classList.toggle("active", b.dataset.dir === item.direction);
+          });
+          doc.querySelectorAll("#text-format-control .segment-item").forEach((b) => {
+            b.classList.toggle("active", !!item[b.dataset.format]);
+          });
+        }
+
+        // 綁定編輯面板控制項
+        doc.querySelectorAll("#stroke-color-grid .color-btn").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.stroke = btn.dataset.stroke)); };
+        });
+        doc.querySelectorAll("#bg-color-grid .color-btn").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.bg = btn.dataset.bg)); };
+        });
+        doc.querySelectorAll("#border-width-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.borderWidth = parseInt(btn.dataset.width))); };
+        });
+        doc.querySelectorAll("#border-style-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.borderStyle = btn.dataset.style)); };
+        });
+        const fsDec = doc.getElementById("font-size-dec");
+        if (fsDec) fsDec.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.fontSize = Math.max(10, item.fontSize - 2))); };
+        const fsInc = doc.getElementById("font-size-inc");
+        if (fsInc) fsInc.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.fontSize = Math.min(72, item.fontSize + 2))); };
+        
+        doc.querySelectorAll("#text-align-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.align = btn.dataset.align)); };
+        });
+                doc.querySelectorAll("#writing-dir-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.direction = btn.dataset.dir)); };
+        });
+        doc.querySelectorAll("#text-format-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); const key = btn.dataset.format; updateActiveTextProps((item) => (item[key] = !item[key])); };
+        });
+
+        // 左右拖曳寬度
         const vResizer = doc.getElementById("v-resizer");
         const sidebar = doc.getElementById("sheet-regions-list");
         let isResizingWidth = false;
@@ -2766,12 +3055,10 @@
           };
           const doResizeWidth = (e) => {
             if (!isResizingWidth) return;
-            // 判斷是滑鼠還是觸控事件
             const clientX = e.type.includes("touch")
               ? e.touches[0].clientX
               : e.clientX;
             const newWidth = doc.body.clientWidth - clientX;
-            // 限制側邊欄寬度在 70px 到 畫面一半 (50%) 之間
             if (newWidth >= 70 && newWidth < doc.body.clientWidth * 0.5) {
               sidebar.style.width = newWidth + "px";
             }
@@ -2784,7 +3071,6 @@
             }
           };
 
-          // 綁定事件監聽器
           vResizer.addEventListener("mousedown", startResizeWidth);
           vResizer.addEventListener("touchstart", startResizeWidth, {
             passive: true,
@@ -2799,9 +3085,8 @@
         win.pdfPagesRendered = [];
         let pdfZoom = 1.0;
 
-        // 1) 縮放控制邏輯 (核心使用 CSS zoom 達成捲軸與內容同步放大)
         function setPdfZoom(z) {
-          pdfZoom = Math.max(0.05, Math.min(2.0, z)); // 限制縮放為 5% 到 200%
+          pdfZoom = Math.max(0.05, Math.min(2.0, z));
           zoomDisplay.textContent = Math.round(pdfZoom * 100) + "%";
           scaleWrapper.style.zoom = pdfZoom;
           const zoomSlider = doc.getElementById("zoom-slider");
@@ -2824,8 +3109,8 @@
               const pdfViewerContainer = doc.getElementById(
                 "pdf-viewer-container",
               );
-              const containerWidth = pdfViewerContainer.clientWidth - 45; // 扣除 padding 與捲軸緩衝空間
-              const originalPageWidth = win.pdfPagesRendered[0].viewport.width; // 直接抓取真實原始寬度，避免 CSS Zoom 造成的計算浮動誤差
+              const containerWidth = pdfViewerContainer.clientWidth - 45;
+              const originalPageWidth = win.pdfPagesRendered[0].viewport.width;
               const fitZoom = containerWidth / originalPageWidth;
               setPdfZoom(fitZoom);
             }
@@ -2839,7 +3124,7 @@
               const pdfViewerContainer = doc.getElementById(
                 "pdf-viewer-container",
               );
-              const containerHeight = pdfViewerContainer.clientHeight - 45; // 扣除 padding 與上下緩衝空間
+              const containerHeight = pdfViewerContainer.clientHeight - 45;
               const originalPageHeight =
                 win.pdfPagesRendered[0].viewport.height;
               const fitZoom = containerHeight / originalPageHeight;
@@ -2848,7 +3133,6 @@
           };
         }
 
-        // 2) 滑鼠滾輪縮放 (Ctrl + Wheel)
         pdfViewerContainer.addEventListener(
           "wheel",
           (e) => {
@@ -2861,7 +3145,6 @@
           { passive: false },
         );
 
-        // 3) 平板雙指縮放 (Pinch-to-zoom) 與防干擾處理
         let initialDist = 0;
         let startZoom = 1;
         pdfViewerContainer.addEventListener(
@@ -2882,7 +3165,7 @@
           "touchmove",
           (e) => {
             if (e.touches.length === 2) {
-              e.preventDefault(); // 攔截觸控事件，阻止瀏覽器原生放大造成破版
+              e.preventDefault();
               const currentDist = Math.hypot(
                 e.touches[0].pageX - e.touches[1].pageX,
                 e.touches[0].pageY - e.touches[1].pageY,
@@ -2896,7 +3179,6 @@
         pdfUpload.addEventListener("change", async (e) => {
           const file = e.target.files[0];
           if (!file) return;
-          // 【修復】改用 Blob URL，避免 FileReader 消耗過多行動裝置記憶體
           const fileUrl = URL.createObjectURL(file);
           loadPdfInWindow(win, fileUrl);
         });
@@ -2908,7 +3190,6 @@
           const d = w.document;
           d.getElementById("pdf-placeholder").style.display = "none";
 
-          // 清理舊頁面
           const oldPages = scaleWrapper.querySelectorAll(".page-container");
           oldPages.forEach((p) => p.remove());
           w.pdfPagesRendered = [];
@@ -2917,11 +3198,8 @@
             const loadingTask = w.pdfjsLib.getDocument(data);
             currentPdfDoc = await loadingTask.promise;
 
-            // 依序建立所有頁面
             for (let i = 1; i <= currentPdfDoc.numPages; i++) {
               const page = await currentPdfDoc.getPage(i);
-
-              // 【修復】動態偵測：若是行動裝置/平板 (含 iPad)，調降渲染倍率以防止 Canvas 記憶體爆掉導致畫面空白
               const isMobileOrTablet =
                 /iPad|iPhone|iPod|Android/.test(navigator.userAgent) ||
                 (navigator.platform === "MacIntel" &&
@@ -2944,17 +3222,22 @@
               canvas.style.display = "block";
               pageContainer.appendChild(canvas);
 
+              // 錨點層
               const anchorContainer = d.createElement("div");
               anchorContainer.style.position = "absolute";
-              anchorContainer.style.top = "0";
-              anchorContainer.style.left = "0";
-              anchorContainer.style.width = "100%";
-              anchorContainer.style.height = "100%";
+              anchorContainer.style.inset = "0";
               anchorContainer.style.pointerEvents = "none";
               anchorContainer.style.zIndex = "10";
               pageContainer.appendChild(anchorContainer);
 
-              // 處理拖曳放置邏輯
+              // 文字註解層
+              const textContainer = d.createElement("div");
+              textContainer.style.position = "absolute";
+              textContainer.style.inset = "0";
+              textContainer.style.pointerEvents = "none";
+              textContainer.style.zIndex = "20";
+              pageContainer.appendChild(textContainer);
+
               pageContainer.addEventListener("dragover", (e) => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "copy";
@@ -2966,8 +3249,6 @@
                 if (!regionName) return;
 
                 const rect = pageContainer.getBoundingClientRect();
-
-                // 即使使用 CSS zoom，比例仍為常數，透過比例運算可免疫放大的偏移
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
                 const xRatio = x / rect.width;
@@ -2988,13 +3269,14 @@
                 }
 
                 window.renderPdfAnchorsInWindow(w);
-                window.updateSheetWindowUI(); // 更新右側列表狀態變色
+                window.updateSheetWindowUI();
               });
 
               scaleWrapper.appendChild(pageContainer);
               w.pdfPagesRendered.push({
                 container: pageContainer,
                 anchorContainer,
+                textContainer,
                 viewport,
               });
 
@@ -3006,8 +3288,8 @@
             }
 
             window.renderPdfAnchorsInWindow(w);
+            window.renderPdfTextAnnotations(w);
 
-            // 1) 載入完成後自動觸發「放寬」(預設依頁面寬度放寬)
             const zoomFitBtn = d.getElementById("zoom-fit-btn");
             if (zoomFitBtn) zoomFitBtn.click();
           } catch (error) {
@@ -3015,37 +3297,300 @@
           }
         }
 
-        // 綁定子視窗快捷鍵，轉發給主視窗控制播放/暫停與取消區域
-        win.document.addEventListener("keydown", (e) => {
-          const tag = e.target.tagName ? e.target.tagName.toLowerCase() : "";
-          if (tag === "input" || tag === "textarea") return;
+        // 點擊新增文字（改用原生 input，保證點擊立刻能打字）
+                                pdfViewerContainer.addEventListener("click", (e) => {
+          if (!isTextMode) return;
+          if (e.target && (e.target.closest(".sheet-text-item") || e.target.closest(".anchor-mark") || e.target.closest("#text-editor-panel") || e.target.closest("#text-tool-btn"))) {
+            return;
+          }
+          const targetPage = e.target.closest(".page-container");
+          if (!targetPage) return;
 
-          if (e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const pageNum = parseInt(targetPage.dataset.pageNum) || 1;
+          const rect = targetPage.getBoundingClientRect();
+          const clientX = e.clientX;
+          const clientY = e.clientY;
+
+          const xRatio = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
+          const yRatio = Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height));
+
+          const newText = {
+            id: Date.now(),
+            pageNum: pageNum,
+            xRatio: xRatio,
+            yRatio: yRatio,
+            text: "",
+            ...currentTextProps,
+          };
+
+          pdfTextAnnotations.push(newText);
+          activeTextId = newText.id;
+          isTextMode = false;
+          updateTextButtonUI();
+
+          window.renderPdfTextAnnotations(win);
+          if (textPanel) {
+            textPanel.style.display = "block";
+            syncPanelUI(newText);
+          }
+          try { saveState(); } catch (err) {}
+
+                              setTimeout(() => {
+            const newEl = win.document.getElementById(`text-item-${newText.id}`);
+            if (newEl) {
+              const inputEl = newEl.querySelector(".sheet-text-content");
+              if (inputEl) {
+                inputEl.setAttribute("contenteditable", "true");
+                inputEl.focus();
+                const range = win.document.createRange();
+                range.selectNodeContents(inputEl);
+                const sel = win.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+            }
+          }, 60);
+        });
+
+        // 快捷鍵控制
+        win.document.addEventListener("keydown", (e) => {
+          const activeEl = win.document.activeElement;
+          const isEditingText = activeEl && (activeEl.isContentEditable || activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
+
+                    if (!isEditingText) {
+            if (e.key === " ") {
+              e.preventDefault();
+              document.body.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: " ",
+                  code: "Space",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            } else if (e.key.toLowerCase() === "m") {
+              e.preventDefault();
+              document.body.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "m",
+                  code: "KeyM",
+                  bubbles: true,
+                  cancelable: true,
+                }),
+              );
+            } else if (e.key.toLowerCase() === "t") {
+              e.preventDefault();
+              if (textToolBtn) textToolBtn.click();
+            }
+          }
+
+          if ((e.key === "Delete" || e.key === "Backspace") && !isEditingText && activeTextId) {
             e.preventDefault();
-            document.body.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: " ",
-                code: "Space",
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
-          } else if (e.key.toLowerCase() === "m") {
-            e.preventDefault();
-            document.body.dispatchEvent(
-              new KeyboardEvent("keydown", {
-                key: "m",
-                code: "KeyM",
-                bubbles: true,
-                cancelable: true,
-              }),
-            );
+            pdfTextAnnotations = pdfTextAnnotations.filter((t) => t.id !== activeTextId);
+            activeTextId = null;
+            if (textPanel) textPanel.style.display = "none";
+            window.renderPdfTextAnnotations(win);
+            try { saveState(); } catch (err) {}
           }
         });
 
-        // 初始生成右側按鈕
+        // 點擊空白處取消文字選中
+        doc.addEventListener("click", (e) => {
+          if (e.target.closest(".sheet-text-item") || e.target.closest("#text-editor-panel") || e.target.closest("#text-tool-btn")) {
+            return;
+          }
+          if (activeTextId) {
+            const el = doc.getElementById(`text-item-${activeTextId}`);
+            if (el) el.classList.remove("selected");
+            activeTextId = null;
+            if (textPanel) textPanel.style.display = "none";
+          }
+        });
+
         window.updateSheetWindowUI();
       }
+
+      // 渲染所有頁面上的文字標籤
+      window.renderPdfTextAnnotations = function (win) {
+        if (!win || !win.pdfPagesRendered) return;
+
+        win.pdfPagesRendered.forEach((p) => {
+          if (p.textContainer) p.textContainer.innerHTML = "";
+        });
+
+                        pdfTextAnnotations.forEach((item) => {
+          const pageData = win.pdfPagesRendered[item.pageNum - 1];
+          if (!pageData || !pageData.textContainer) return;
+
+          const textEl = win.document.createElement("div");
+          textEl.id = `text-item-${item.id}`;
+          textEl.className = `sheet-text-item ${activeTextId === item.id ? "selected" : ""}`;
+          textEl.style.left = item.xRatio * 100 + "%";
+          textEl.style.top = item.yRatio * 100 + "%";
+          textEl.style.color = item.stroke;
+          textEl.style.backgroundColor = item.bg;
+          textEl.style.border = `${item.borderWidth}px ${item.borderStyle} ${item.stroke}`;
+                    textEl.style.fontSize = `${item.fontSize}px`;
+          textEl.style.textAlign = item.align;
+          textEl.style.fontWeight = item.bold ? "700" : "400";
+          textEl.style.fontStyle = item.italic ? "italic" : "normal";
+          textEl.style.textDecoration = item.underline ? "underline" : "none";
+
+          if (item.direction === "vertical") {
+            textEl.style.writingMode = "vertical-rl";
+            textEl.style.textOrientation = "upright";
+          } else {
+            textEl.style.writingMode = "horizontal-tb";
+            textEl.style.textOrientation = "mixed";
+          }
+
+                    textEl.innerHTML = `
+            <div class="sheet-text-content" contenteditable="false" spellcheck="false">${item.text}</div>
+            <div class="remove-text-btn" style="position:absolute; top:-8px; right:-8px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; display:none; align-items:center; justify-content:center; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); z-index:40; border:1.5px solid white;" title="刪除">✕</div>
+          `;
+
+          const contentEl = textEl.querySelector(".sheet-text-content");
+          const removeBtn = textEl.querySelector(".remove-text-btn");
+
+          if (activeTextId === item.id) {
+            removeBtn.style.display = "flex";
+          }
+
+          // 雙擊進入編輯模式
+          contentEl.addEventListener("dblclick", (e) => {
+            e.stopPropagation();
+            contentEl.setAttribute("contenteditable", "true");
+            contentEl.focus();
+            const range = win.document.createRange();
+            range.selectNodeContents(contentEl);
+            range.collapse(false);
+            const sel = win.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          });
+
+          // 內容修改保存，並離開編輯模式（恢復可拖動狀態）
+          contentEl.addEventListener("blur", () => {
+            item.text = contentEl.innerText.trim() || "文字";
+            contentEl.setAttribute("contenteditable", "false");
+            saveState();
+          });
+
+          // 刪除按鈕
+          removeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            pdfTextAnnotations = pdfTextAnnotations.filter((t) => t.id !== item.id);
+            if (activeTextId === item.id) {
+              activeTextId = null;
+              win.document.getElementById("text-editor-panel").style.display = "none";
+            }
+            window.renderPdfTextAnnotations(win);
+            saveState();
+          });
+
+          // 選取文字物件與顯示編輯面板
+          textEl.addEventListener("mousedown", (e) => {
+            if (e.target.classList.contains("remove-text-btn")) return;
+            e.stopPropagation();
+
+            activeTextId = item.id;
+            win.document.querySelectorAll(".sheet-text-item").forEach((el) => el.classList.remove("selected"));
+            textEl.classList.add("selected");
+            removeBtn.style.display = "flex";
+
+            const panel = win.document.getElementById("text-editor-panel");
+            if (panel) {
+              panel.style.display = "block";
+              // 同步面板樣式狀態
+              win.document.querySelectorAll("#stroke-color-grid .color-btn").forEach((b) => {
+                b.classList.toggle("active", b.dataset.stroke === item.stroke);
+              });
+              win.document.querySelectorAll("#bg-color-grid .color-btn").forEach((b) => {
+                b.classList.toggle("active", b.dataset.bg === item.bg);
+              });
+              win.document.querySelectorAll("#border-width-control .segment-item").forEach((b) => {
+                b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth);
+              });
+              win.document.querySelectorAll("#border-style-control .segment-item").forEach((b) => {
+                b.classList.toggle("active", b.dataset.style === item.borderStyle);
+              });
+              win.document.getElementById("font-size-val").textContent = item.fontSize;
+              win.document.querySelectorAll("#text-align-control .segment-item").forEach((b) => {
+                b.classList.toggle("active", b.dataset.align === item.align);
+              });
+                            win.document.querySelectorAll("#writing-dir-control .segment-item").forEach((b) => {
+                b.classList.toggle("active", b.dataset.dir === item.direction);
+              });
+              win.document.querySelectorAll("#text-format-control .segment-item").forEach((b) => {
+                b.classList.toggle("active", !!item[b.dataset.format]);
+              });
+            }
+          });
+
+          // 拖曳移動文字標籤
+          let isDragging = false;
+          let dragStartX = 0, dragStartY = 0;
+          let moved = false;
+
+          const onStartDrag = (e) => {
+            if (e.target.isContentEditable || e.target.classList.contains("remove-text-btn")) return;
+            isDragging = true;
+            moved = false;
+            dragStartX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
+            dragStartY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+            textEl.style.cursor = "grabbing";
+          };
+
+          const onDoDrag = (e) => {
+            if (!isDragging) return;
+            const clientX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+
+            if (Math.abs(clientX - dragStartX) > 4 || Math.abs(clientY - dragStartY) > 4) {
+              moved = true;
+            }
+
+            if (moved) {
+              e.preventDefault();
+              const rect = pageData.textContainer.getBoundingClientRect();
+              let nx = (clientX - rect.left) / rect.width;
+              let ny = (clientY - rect.top) / rect.height;
+
+              nx = Math.max(0, Math.min(1, nx));
+              ny = Math.max(0, Math.min(1, ny));
+
+              textEl.style.left = nx * 100 + "%";
+              textEl.style.top = ny * 100 + "%";
+              textEl.dataset.newX = nx;
+              textEl.dataset.newY = ny;
+            }
+          };
+
+          const onStopDrag = () => {
+            if (isDragging) {
+              isDragging = false;
+              textEl.style.cursor = "grab";
+              if (moved && textEl.dataset.newX !== undefined) {
+                item.xRatio = parseFloat(textEl.dataset.newX);
+                item.yRatio = parseFloat(textEl.dataset.newY);
+                saveState();
+              }
+            }
+          };
+
+          textEl.addEventListener("mousedown", onStartDrag);
+          textEl.addEventListener("touchstart", onStartDrag, { passive: true });
+          win.document.addEventListener("mousemove", onDoDrag);
+          win.document.addEventListener("touchmove", onDoDrag, { passive: false });
+          win.document.addEventListener("mouseup", onStopDrag);
+          win.document.addEventListener("touchend", onStopDrag);
+
+                              pageData.textContainer.appendChild(textEl);
+        });
+      };
 
       // 綁定於全域，讓主程式更新時可呼叫
       window.renderPdfAnchorsInWindow = function (win) {
@@ -3098,7 +3643,6 @@
               ? e.touches[0].clientY
               : e.clientY;
 
-            // 判斷移動距離超過 5px 才視為拖曳，避免輕微手震被判定為拖曳
             if (
               !hasDragged &&
               (Math.abs(clientX - startX) > 5 || Math.abs(clientY - startY) > 5)
@@ -3151,7 +3695,6 @@
 
           // 點擊 PDF 上的錨點，讓主程式影片跳轉或刪除錨點
           mark.addEventListener("click", (e) => {
-            // 1) 點擊 x 取消錨點
             if (e.target.classList.contains("remove-anchor-btn")) {
               const idx = pdfAnchors.findIndex(
                 (a) => a.regionName === anchor.regionName,
@@ -3164,20 +3707,17 @@
               return;
             }
 
-            // 如果剛剛發生拖曳行為，則阻止點擊跳轉觸發
             if (hasDragged) {
               hasDragged = false;
               return;
             }
 
-            // 2) 點擊主體跳轉並同步主程式按鈕狀態
             const regIndex = customRegions.findIndex(
               (r) => r.name === anchor.regionName,
             );
             if (regIndex !== -1) {
               const reg = customRegions[regIndex];
 
-              // 同步主畫面狀態
               activeRegionIndex = regIndex;
               savedPlayTime = parseFloat(reg.start);
               video.currentTime = parseFloat(reg.start);
@@ -3190,7 +3730,6 @@
                 video.play();
               }
 
-              // 自動平滑捲動主畫面時間軸
               const maxTime = Math.max(duration, ...clips.map((c) => c.end));
               const contentWidth =
                 document.getElementById("timeline-content").scrollWidth;
@@ -3219,15 +3758,12 @@
           btn.className = "region-btn";
           btn.draggable = true;
 
-          // 判斷是否已經有該區塊的錨點，有的話變更樣式與文字
           const isPlaced = pdfAnchors.some((a) => a.regionName === reg.name);
           if (isPlaced) {
-            btn.style.backgroundColor = "#059669"; // 變色為綠色表示已拉入
+            btn.style.backgroundColor = "#059669";
             btn.style.borderColor = "#34d399";
-            // 加入取消錨點的 "x" 按鈕，並把文字設為 pointer-events:none 防止誤觸 (拿掉已拉入，並設定文字防溢出)
             btn.innerHTML = `<span style="pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1; min-width: 0; margin-right: 4px;">✔ ${reg.name}</span> <div style="display:flex; align-items:center; flex-shrink: 0;"><span class="remove-anchor" style="cursor:pointer; background:rgba(255,255,255,0.25); border-radius:50%; width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; font-weight:bold; font-size:10px;" title="取消錨點">✕</span></div>`;
           } else {
-            // 拿掉拖曳字眼，並設定文字防溢出
             btn.innerHTML = `<span style="pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1; min-width: 0;">♫ ${reg.name}</span>`;
           }
 
@@ -3240,9 +3776,7 @@
             btn.style.opacity = "0.9";
           });
 
-          // 點擊右側列表按鈕，讓左側 PDF 跳至對應頁面位置，並同步主程式狀態
           btn.addEventListener("click", (e) => {
-            // 1) 點擊到 X 按鈕，刪除該錨點
             if (e.target.classList.contains("remove-anchor")) {
               const idx = pdfAnchors.findIndex(
                 (a) => a.regionName === reg.name,
@@ -3250,12 +3784,11 @@
               if (idx !== -1) {
                 pdfAnchors.splice(idx, 1);
                 window.renderPdfAnchorsInWindow(sheetWindow);
-                window.updateSheetWindowUI(); // 更新為未拉入狀態
+                window.updateSheetWindowUI();
               }
-              return; // 終止跳轉
+              return;
             }
 
-            // 2) 同步主畫面狀態 (下方按鈕反白與跳轉)
             const regIndex = customRegions.findIndex(
               (r) => r.name === reg.name,
             );
@@ -3268,14 +3801,13 @@
                 end: parseFloat(customRegions[regIndex].end),
               };
               renderTimeline();
-              renderRegions(); // 觸發主程式下方按鈕反白
+              renderRegions();
 
               if (video.paused) {
                 lastSysTime = performance.now();
                 video.play();
               }
 
-              // 自動平滑捲動主畫面時間軸
               const maxTime = Math.max(duration, ...clips.map((c) => c.end));
               const contentWidth =
                 document.getElementById("timeline-content").scrollWidth;
@@ -3286,7 +3818,6 @@
               });
             }
 
-            // 3) 左側 PDF 跳轉邏輯
             const anchor = pdfAnchors.find((a) => a.regionName === reg.name);
             if (anchor) {
               const pageData = sheetWindow.pdfPagesRendered[anchor.pageNum - 1];
@@ -3295,7 +3826,6 @@
                   "pdf-viewer-container",
                 );
 
-                // 修正：取得當前縮放比例，精準計算錨點的 Y 軸實際位置，並讓其顯示在畫面偏上方
                 const currentZoom =
                   parseFloat(
                     sheetWindow.document.getElementById("pdf-scale-wrapper")
@@ -3312,7 +3842,6 @@
                   behavior: "smooth",
                 });
 
-                // 高亮該點
                 const marks =
                   pageData.anchorContainer.querySelectorAll(".anchor-label");
                 let targetMark = null;
@@ -3342,8 +3871,8 @@
           list.appendChild(btn);
         });
 
-        
         window.renderPdfAnchorsInWindow(sheetWindow);
+        window.renderPdfTextAnnotations(sheetWindow);
       };
     </script>
   </body>

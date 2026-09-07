@@ -2596,9 +2596,11 @@
       document.addEventListener("touchend", stopResize);
 
       // --- 樂譜功能 (另開新視窗) ---
-            let sheetWindow = null;
+      let sheetWindow = null;
       let pdfTextAnnotations = []; // 儲存文字註解項目
-      let activeTextId = null; // 目前選取中的文字項目 id（移到外層，讓 renderPdfTextAnnotations 也能存取）
+      let pdfBoxAnnotations = []; // 儲存方框註解項目
+      let activeTextId = null; // 目前選取的文字項目 id
+      let activeBoxId = null; // 目前選取的方框項目 id
       const sheetMusicBtn = document.getElementById("sheet-music-btn");
 
       sheetMusicBtn.addEventListener("click", () => {
@@ -2611,7 +2613,7 @@
         // 開啟新視窗
         sheetWindow = window.open("", "_blank", "width=1100,height=800");
 
-        // 寫入新視窗的 HTML 架構 (加入文字編輯面板與觸控手勢綁定容器)
+        // 寫入新視窗的 HTML 架構 (包含文字面板、方框面板與觸控手勢容器)
         sheetWindow.document.write(`
             <!DOCTYPE html>
             <html lang="zh-TW">
@@ -2644,8 +2646,13 @@
                     .sheet-text-item.selected { outline: 2px dashed #3b82f6; outline-offset: 4px; }
                     .sheet-text-content { outline: none; min-width: 20px; min-height: 20px; padding: 4px 8px; white-space: pre-wrap; word-break: break-word; line-height: 1.3; }
 
+                    /* 方框標籤樣式 */
+                    .sheet-box-item { position: absolute; cursor: grab; pointer-events: auto; user-select: none; z-index: 25; box-sizing: border-box; }
+                    .sheet-box-item.selected { outline: 2px dashed #3b82f6; outline-offset: 4px; }
+                    .box-resizer { position: absolute; right: -6px; bottom: -6px; width: 14px; height: 14px; background: #3b82f6; border: 2px solid white; border-radius: 3px; cursor: nwse-resize; z-index: 35; }
+
                     /* 附圖面板樣式 */
-                    #text-editor-panel { position: absolute; top: 12px; right: 16px; width: 230px; background: #ffffff; color: #1e293b; border-radius: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3); z-index: 200; font-size: 12px; border: 1px solid #e2e8f0; display: none; overflow: hidden; }
+                    .floating-panel { position: absolute; top: 12px; right: 16px; width: 230px; background: #ffffff; color: #1e293b; border-radius: 14px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.3); z-index: 200; font-size: 12px; border: 1px solid #e2e8f0; display: none; overflow: hidden; }
                     .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 4px 14px; cursor: move; }
                     .panel-header-bar { width: 42px; height: 4px; background: #cbd5e1; border-radius: 9999px; margin: 0 auto; }
                     .panel-section { padding: 8px 14px; }
@@ -2703,6 +2710,9 @@
                         <button class="btn" id="text-tool-btn" style="background:#4b5563; font-weight:bold; display:flex; align-items:center; gap:4px; font-size:15px; padding:6px 14px;" title="文字工具 (點擊PDF任意處新增文字)">
                             <span style="font-family:serif; font-size:18px;">T</span> 文字
                         </button>
+                        <button class="btn" id="box-tool-btn" style="background:#4b5563; font-weight:bold; display:flex; align-items:center; gap:6px; font-size:15px; padding:6px 14px;" title="方框工具 (點擊PDF任意處新增方框)">
+                            <span style="font-size:16px;">□</span> 方框
+                        </button>
                         <div style="display:flex; align-items:center; gap:8px; background:#374151; padding:4px 12px; border-radius:4px;">
                             <button class="btn" id="anchor-size-up" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="放大標籤">↑</button>
                             <button class="btn" id="anchor-size-down" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="縮小標籤">↓</button>
@@ -2714,8 +2724,7 @@
                             <div style="width: 1px; height: 20px; background: #6b7280; margin: 0 4px;"></div>
                             <button class="btn toggle-sidebar-btn" style="padding:2px 10px; font-size:12px; background:#4b5563; white-space:nowrap;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); s.classList.toggle('collapsed'); const isCollapsed = s.classList.contains('collapsed'); this.textContent = isCollapsed ? '展開' : '收合'; resizer.style.display = isCollapsed ? 'none' : 'block';">收合</button>
                         </div>
-                        <input type="file" id="pdf-upload" accept="application/pdf" style="display: none;">
-                        <button class="btn" onclick="document.getElementById('pdf-upload').click()">PDF</button>
+                        <button class="btn" id="export-pdf-btn" style="background:#059669; font-weight:bold; display:flex; align-items:center; gap:4px; padding:6px 14px;" title="匯出包含文字與方框標註的新 PDF 檔">匯出 PDF</button>
                     </div>
                 </div>
                 <div class="main-area">
@@ -2725,7 +2734,8 @@
                         </div>
                     </div>
 
-                    <div id="text-editor-panel">
+                    <!-- 文字編輯面板 -->
+                    <div id="text-editor-panel" class="floating-panel">
                         <div class="panel-header">
                             <div class="panel-header-bar"></div>
                             <button id="close-text-panel" style="background:none; border:none; color:#64748b; font-size:16px; cursor:pointer; font-weight:bold; line-height:1;">⌃</button>
@@ -2743,7 +2753,7 @@
                                 <div class="color-btn" data-stroke="#8d6e63" style="background:#8d6e63;" title="淺褐"></div>
                             </div>
                         </div>
-                                                <div class="panel-section">
+                        <div class="panel-section">
                             <div class="panel-title">背景顏色 (Background)</div>
                             <div class="color-grid" style="grid-template-columns: repeat(6, 1fr);" id="bg-color-grid">
                                 <div class="color-btn checker-bg active" data-bg="transparent" title="透明"></div>
@@ -2762,7 +2772,7 @@
                                 <div class="segment-item" data-width="4"><div style="width:24px; height:6px; background:#1e293b; border-radius:3px;"></div></div>
                             </div>
                         </div>
-                                                <div class="panel-section">
+                        <div class="panel-section">
                             <div class="panel-title">線條樣式 (Style)</div>
                             <div class="segmented-control" id="border-style-control">
                                 <div class="segment-item" data-style="none" title="無邊框"><div style="font-size:11px; color:#94a3b8;">無</div></div>
@@ -2771,7 +2781,7 @@
                                 <div class="segment-item" data-style="dotted"><div style="width:26px; border-top:2px dotted #1e293b;"></div></div>
                             </div>
                         </div>
-                                                <div class="panel-section">
+                        <div class="panel-section">
                             <div class="panel-title">字體大小 (Font Size)</div>
                             <div class="segmented-control" style="background:#f8fafc; border:1px solid #e2e8f0;">
                                 <div class="segment-item" id="font-size-dec" style="font-weight:bold; font-size:18px;">－</div>
@@ -2809,6 +2819,64 @@
                                 </div>
                                 <div class="segment-item" data-dir="vertical" title="直向">
                                     <svg style="width:18px; height:18px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4v16M12 4v16M18 4v16"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 方框編輯面板 (符合附圖設計) -->
+                    <div id="box-editor-panel" class="floating-panel">
+                        <div class="panel-header" id="box-panel-header">
+                            <div class="panel-header-bar"></div>
+                            <button id="close-box-panel" style="background:none; border:none; color:#64748b; font-size:16px; cursor:pointer; font-weight:bold; line-height:1;">⌃</button>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">邊框顏色 (Stroke)</div>
+                            <div class="color-grid" id="box-stroke-grid">
+                                <div class="color-btn" data-stroke="#1e293b" style="background:#1e293b;" title="黑色"></div>
+                                <div class="color-btn active" data-stroke="#dc2626" style="background:#dc2626;" title="紅色"></div>
+                                <div class="color-btn" data-stroke="#16a34a" style="background:#16a34a;" title="綠色"></div>
+                                <div class="color-btn" data-stroke="#2563eb" style="background:#2563eb;" title="藍色"></div>
+                                <div class="color-btn" data-stroke="#ea580c" style="background:#ea580c;" title="橘色"></div>
+                                <div class="color-btn" data-stroke="#facc15" style="background:#facc15;" title="黃色"></div>
+                                <div class="color-btn" data-stroke="#3e2723" style="background:#3e2723;" title="深褐"></div>
+                                <div class="color-btn" data-stroke="#8d6e63" style="background:#8d6e63;" title="淺褐"></div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">背景顏色 (Background)</div>
+                            <div class="color-grid" style="grid-template-columns: repeat(5, 1fr);" id="box-bg-grid">
+                                <div class="color-btn checker-bg active" data-bg="transparent" title="透明"></div>
+                                <div class="color-btn" data-bg="#fecaca" style="background:#fecaca;" title="粉紅"></div>
+                                <div class="color-btn" data-bg="#bbf7d0" style="background:#bbf7d0;" title="淺綠"></div>
+                                <div class="color-btn" data-bg="#bfdbfe" style="background:#bfdbfe;" title="淺藍"></div>
+                                <div class="color-btn" data-bg="#fef08a" style="background:#fef08a;" title="淺黃"></div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">線條粗細 (Width)</div>
+                            <div class="segmented-control" id="box-width-control">
+                                <div class="segment-item" data-width="2"><div style="width:24px; height:2px; background:#1e293b; border-radius:1px;"></div></div>
+                                <div class="segment-item" data-width="4"><div style="width:24px; height:4px; background:#1e293b; border-radius:2px;"></div></div>
+                                <div class="segment-item active" data-width="8"><div style="width:24px; height:6px; background:#1e293b; border-radius:3px;"></div></div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">線條樣式 (Style)</div>
+                            <div class="segmented-control" id="box-style-control">
+                                <div class="segment-item active" data-style="solid"><div style="width:26px; border-top:2px solid #1e293b;"></div></div>
+                                <div class="segment-item" data-style="dashed"><div style="width:26px; border-top:2px dashed #1e293b;"></div></div>
+                                <div class="segment-item" data-style="dotted"><div style="width:26px; border-top:2px dotted #1e293b;"></div></div>
+                            </div>
+                        </div>
+                        <div class="panel-section" style="padding-bottom:14px;">
+                            <div class="panel-title">邊緣 (Edges)</div>
+                            <div class="segmented-control" id="box-edges-control">
+                                <div class="segment-item" data-radius="0" title="直角">
+                                    <svg style="width:22px; height:22px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="square"><path d="M7 19V7h12"/></svg>
+                                </div>
+                                <div class="segment-item active" data-radius="12" title="圓角">
+                                    <svg style="width:22px; height:22px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 19V11a4 4 0 0 1 4-4h8"/></svg>
                                 </div>
                             </div>
                         </div>
@@ -2867,17 +2935,17 @@
           window.globalAnchorScale,
         );
 
-                // 文字功能狀態
+        // --- 文字功能狀態 ---
         let isTextMode = false;
         const textToolBtn = doc.getElementById("text-tool-btn");
         const textPanel = doc.getElementById("text-editor-panel");
 
-                // 全域文字樣式
+        // 全域文字樣式（預設無外框、無背景）
         let currentTextProps = {
-          stroke: "#dc2626", // 預設亮紅
-          bg: "#fef08a",     // 預設淺黃底
-          borderWidth: 2,
-          borderStyle: "solid",
+          stroke: "#dc2626",      // 文字顏色（亮紅）
+          bg: "transparent",     // 預設無背景
+          borderWidth: 1,
+          borderStyle: "none",   // 預設無外框
           fontSize: 24,
           align: "center",
           direction: "horizontal",
@@ -2892,71 +2960,120 @@
           textPanel.style.overscrollBehavior = "contain";
         }
 
-        // 面板拖曳功能
-        const panelHeader = doc.querySelector(".panel-header");
-        if (panelHeader && textPanel) {
-          let isDraggingPanel = false;
-          let panelStartX = 0, panelStartY = 0;
-          let initialPanelLeft = 0, initialPanelTop = 0;
+        // --- 方框功能狀態 (符合附圖預設值) ---
+        let isBoxMode = false;
+        const boxToolBtn = doc.getElementById("box-tool-btn");
+        const boxPanel = doc.getElementById("box-editor-panel");
 
-          const onPanelDragStart = (e) => {
-            if (e.target.closest("#close-text-panel")) return;
-            isDraggingPanel = true;
+        let currentBoxProps = {
+          stroke: "#dc2626", // 預設紅框
+          bg: "transparent", // 預設透明底
+          borderWidth: 4,    // 預設粗線
+          borderStyle: "solid",
+          borderRadius: 12,  // 預設圓角
+        };
+
+        if (boxPanel) {
+          boxPanel.style.maxHeight = "calc(100vh - 80px)";
+          boxPanel.style.overflowY = "auto";
+          boxPanel.style.overscrollBehavior = "contain";
+        }
+
+        // 面板通用拖曳綁定函數
+        function makePanelDraggable(panelEl, headerEl) {
+          if (!panelEl || !headerEl) return;
+          let isDragging = false;
+          let startX = 0, startY = 0;
+          let initialLeft = 0, initialTop = 0;
+
+          const onStart = (e) => {
+            if (e.target.closest("button")) return;
+            isDragging = true;
             const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
             const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-            panelStartX = clientX;
-            panelStartY = clientY;
-            const rect = textPanel.getBoundingClientRect();
-            initialPanelLeft = rect.left;
-            initialPanelTop = rect.top;
-            textPanel.style.right = "auto";
-            textPanel.style.bottom = "auto";
-            textPanel.style.left = initialPanelLeft + "px";
-            textPanel.style.top = initialPanelTop + "px";
+            startX = clientX;
+            startY = clientY;
+            const rect = panelEl.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+            panelEl.style.right = "auto";
+            panelEl.style.bottom = "auto";
+            panelEl.style.left = initialLeft + "px";
+            panelEl.style.top = initialTop + "px";
           };
 
-          const onPanelDragMove = (e) => {
-            if (!isDraggingPanel) return;
+          const onMove = (e) => {
+            if (!isDragging) return;
             e.preventDefault();
             const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
             const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
-            const dx = clientX - panelStartX;
-            const dy = clientY - panelStartY;
-            textPanel.style.left = Math.max(10, Math.min(doc.body.clientWidth - textPanel.offsetWidth - 10, initialPanelLeft + dx)) + "px";
-            textPanel.style.top = Math.max(10, Math.min(doc.body.clientHeight - textPanel.offsetHeight - 10, initialPanelTop + dy)) + "px";
+            const dx = clientX - startX;
+            const dy = clientY - startY;
+            panelEl.style.left = Math.max(10, Math.min(doc.body.clientWidth - panelEl.offsetWidth - 10, initialLeft + dx)) + "px";
+            panelEl.style.top = Math.max(10, Math.min(doc.body.clientHeight - panelEl.offsetHeight - 10, initialTop + dy)) + "px";
           };
 
-          const onPanelDragEnd = () => {
-            isDraggingPanel = false;
-          };
+          const onEnd = () => { isDragging = false; };
 
-          panelHeader.addEventListener("pointerdown", onPanelDragStart);
-          win.addEventListener("pointermove", onPanelDragMove);
-          win.addEventListener("pointerup", onPanelDragEnd);
+          headerEl.addEventListener("pointerdown", onStart);
+          win.addEventListener("pointermove", onMove);
+          win.addEventListener("pointerup", onEnd);
         }
 
-        function updateTextButtonUI() {
-          if (!textToolBtn) return;
-          if (isTextMode) {
-            textToolBtn.style.setProperty("background", "#2563eb", "important");
-            textToolBtn.style.setProperty("color", "#ffffff", "important");
-            if (pdfViewerContainer) pdfViewerContainer.style.cursor = "crosshair";
-          } else {
-            textToolBtn.style.setProperty("background", "#4b5563", "important");
-            textToolBtn.style.setProperty("color", "white", "important");
-            if (pdfViewerContainer) pdfViewerContainer.style.cursor = "default";
+        makePanelDraggable(textPanel, doc.querySelector(".panel-header"));
+        makePanelDraggable(boxPanel, doc.getElementById("box-panel-header"));
+
+        // 切換工具按鈕外觀
+        function updateToolButtonsUI() {
+          if (textToolBtn) {
+            if (isTextMode) {
+              textToolBtn.style.setProperty("background", "#2563eb", "important");
+              textToolBtn.style.setProperty("color", "#ffffff", "important");
+            } else {
+              textToolBtn.style.setProperty("background", "#4b5563", "important");
+              textToolBtn.style.setProperty("color", "white", "important");
+            }
+          }
+          if (boxToolBtn) {
+            if (isBoxMode) {
+              boxToolBtn.style.setProperty("background", "#2563eb", "important");
+              boxToolBtn.style.setProperty("color", "#ffffff", "important");
+            } else {
+              boxToolBtn.style.setProperty("background", "#4b5563", "important");
+              boxToolBtn.style.setProperty("color", "white", "important");
+            }
+          }
+          if (pdfViewerContainer) {
+            pdfViewerContainer.style.cursor = (isTextMode || isBoxMode) ? "crosshair" : "default";
           }
         }
 
-                                if (textToolBtn) {
+        if (textToolBtn) {
           textToolBtn.onclick = (e) => {
             e.preventDefault();
             e.stopPropagation();
             isTextMode = !isTextMode;
-            updateTextButtonUI();
+            if (isTextMode) isBoxMode = false;
+            updateToolButtonsUI();
             if (isTextMode && textPanel) {
               textPanel.style.display = "block";
-              syncPanelUI(currentTextProps);
+              if (boxPanel) boxPanel.style.display = "none";
+              syncTextPanelUI(currentTextProps);
+            }
+          };
+        }
+
+        if (boxToolBtn) {
+          boxToolBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isBoxMode = !isBoxMode;
+            if (isBoxMode) isTextMode = false;
+            updateToolButtonsUI();
+            if (isBoxMode && boxPanel) {
+              boxPanel.style.display = "block";
+              if (textPanel) textPanel.style.display = "none";
+              syncBoxPanelUI(currentBoxProps);
             }
           };
         }
@@ -2974,7 +3091,20 @@
           };
         }
 
-        // 面板樣式選取切換與更新邏輯
+        const closeBoxPanelBtn = doc.getElementById("close-box-panel");
+        if (closeBoxPanelBtn) {
+          closeBoxPanelBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (boxPanel) boxPanel.style.display = "none";
+            if (activeBoxId) {
+              const el = doc.getElementById(`box-item-${activeBoxId}`);
+              if (el) el.classList.remove("selected");
+              activeBoxId = null;
+            }
+          };
+        }
+
+        // --- 文字面板樣式同步與更新 ---
         function updateActiveTextProps(mutator) {
           mutator(currentTextProps);
           if (activeTextId) {
@@ -2985,36 +3115,21 @@
               try { saveState(); } catch (err) {}
             }
           }
-          syncPanelUI(currentTextProps);
+          syncTextPanelUI(currentTextProps);
         }
 
-        function syncPanelUI(item) {
-          doc.querySelectorAll("#stroke-color-grid .color-btn").forEach((b) => {
-            b.classList.toggle("active", b.dataset.stroke === item.stroke);
-          });
-          doc.querySelectorAll("#bg-color-grid .color-btn").forEach((b) => {
-            b.classList.toggle("active", b.dataset.bg === item.bg);
-          });
-          doc.querySelectorAll("#border-width-control .segment-item").forEach((b) => {
-            b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth);
-          });
-          doc.querySelectorAll("#border-style-control .segment-item").forEach((b) => {
-            b.classList.toggle("active", b.dataset.style === item.borderStyle);
-          });
+        function syncTextPanelUI(item) {
+          doc.querySelectorAll("#stroke-color-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.stroke === item.stroke));
+          doc.querySelectorAll("#bg-color-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.bg === item.bg));
+          doc.querySelectorAll("#border-width-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth));
+          doc.querySelectorAll("#border-style-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.style === item.borderStyle));
           const fontSizeEl = doc.getElementById("font-size-val");
           if (fontSizeEl) fontSizeEl.textContent = item.fontSize;
-          doc.querySelectorAll("#text-align-control .segment-item").forEach((b) => {
-            b.classList.toggle("active", b.dataset.align === item.align);
-          });
-                    doc.querySelectorAll("#writing-dir-control .segment-item").forEach((b) => {
-            b.classList.toggle("active", b.dataset.dir === item.direction);
-          });
-          doc.querySelectorAll("#text-format-control .segment-item").forEach((b) => {
-            b.classList.toggle("active", !!item[b.dataset.format]);
-          });
+          doc.querySelectorAll("#text-align-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.align === item.align));
+          doc.querySelectorAll("#writing-dir-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.dir === item.direction));
+          doc.querySelectorAll("#text-format-control .segment-item").forEach((b) => b.classList.toggle("active", !!item[b.dataset.format]));
         }
 
-        // 綁定編輯面板控制項
         doc.querySelectorAll("#stroke-color-grid .color-btn").forEach((btn) => {
           btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.stroke = btn.dataset.stroke)); };
         });
@@ -3031,15 +3146,52 @@
         if (fsDec) fsDec.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.fontSize = Math.max(10, item.fontSize - 2))); };
         const fsInc = doc.getElementById("font-size-inc");
         if (fsInc) fsInc.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.fontSize = Math.min(72, item.fontSize + 2))); };
-        
         doc.querySelectorAll("#text-align-control .segment-item").forEach((btn) => {
           btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.align = btn.dataset.align)); };
         });
-                doc.querySelectorAll("#writing-dir-control .segment-item").forEach((btn) => {
+        doc.querySelectorAll("#writing-dir-control .segment-item").forEach((btn) => {
           btn.onclick = (e) => { e.stopPropagation(); updateActiveTextProps((item) => (item.direction = btn.dataset.dir)); };
         });
         doc.querySelectorAll("#text-format-control .segment-item").forEach((btn) => {
           btn.onclick = (e) => { e.stopPropagation(); const key = btn.dataset.format; updateActiveTextProps((item) => (item[key] = !item[key])); };
+        });
+
+        // --- 方框面板樣式同步與更新 (附圖) ---
+        function updateActiveBoxProps(mutator) {
+          mutator(currentBoxProps);
+          if (activeBoxId) {
+            const item = pdfBoxAnnotations.find((b) => b.id === activeBoxId);
+            if (item) {
+              mutator(item);
+              window.renderPdfBoxAnnotations(win);
+              try { saveState(); } catch (err) {}
+            }
+          }
+          syncBoxPanelUI(currentBoxProps);
+        }
+
+        function syncBoxPanelUI(item) {
+          doc.querySelectorAll("#box-stroke-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.stroke === item.stroke));
+          doc.querySelectorAll("#box-bg-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.bg === item.bg));
+          doc.querySelectorAll("#box-width-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth));
+          doc.querySelectorAll("#box-style-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.style === item.borderStyle));
+          doc.querySelectorAll("#box-edges-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.radius) === item.borderRadius));
+        }
+
+        doc.querySelectorAll("#box-stroke-grid .color-btn").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveBoxProps((item) => (item.stroke = btn.dataset.stroke)); };
+        });
+        doc.querySelectorAll("#box-bg-grid .color-btn").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveBoxProps((item) => (item.bg = btn.dataset.bg)); };
+        });
+        doc.querySelectorAll("#box-width-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveBoxProps((item) => (item.borderWidth = parseInt(btn.dataset.width))); };
+        });
+        doc.querySelectorAll("#box-style-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveBoxProps((item) => (item.borderStyle = btn.dataset.style)); };
+        });
+        doc.querySelectorAll("#box-edges-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveBoxProps((item) => (item.borderRadius = parseInt(btn.dataset.radius))); };
         });
 
         // 左右拖曳寬度
@@ -3055,9 +3207,7 @@
           };
           const doResizeWidth = (e) => {
             if (!isResizingWidth) return;
-            const clientX = e.type.includes("touch")
-              ? e.touches[0].clientX
-              : e.clientX;
+            const clientX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
             const newWidth = doc.body.clientWidth - clientX;
             if (newWidth >= 70 && newWidth < doc.body.clientWidth * 0.5) {
               sidebar.style.width = newWidth + "px";
@@ -3072,9 +3222,7 @@
           };
 
           vResizer.addEventListener("mousedown", startResizeWidth);
-          vResizer.addEventListener("touchstart", startResizeWidth, {
-            passive: true,
-          });
+          vResizer.addEventListener("touchstart", startResizeWidth, { passive: true });
           doc.addEventListener("mousemove", doResizeWidth);
           doc.addEventListener("touchmove", doResizeWidth, { passive: true });
           doc.addEventListener("mouseup", stopResizeWidth);
@@ -3097,18 +3245,14 @@
 
         const zoomSlider = doc.getElementById("zoom-slider");
         if (zoomSlider) {
-          zoomSlider.addEventListener("input", (e) =>
-            setPdfZoom(parseFloat(e.target.value)),
-          );
+          zoomSlider.addEventListener("input", (e) => setPdfZoom(parseFloat(e.target.value)));
         }
 
         const zoomFitBtn = doc.getElementById("zoom-fit-btn");
         if (zoomFitBtn) {
           zoomFitBtn.onclick = () => {
             if (win.pdfPagesRendered && win.pdfPagesRendered.length > 0) {
-              const pdfViewerContainer = doc.getElementById(
-                "pdf-viewer-container",
-              );
+              const pdfViewerContainer = doc.getElementById("pdf-viewer-container");
               const containerWidth = pdfViewerContainer.clientWidth - 45;
               const originalPageWidth = win.pdfPagesRendered[0].viewport.width;
               const fitZoom = containerWidth / originalPageWidth;
@@ -3121,12 +3265,9 @@
         if (zoomFitHeightBtn) {
           zoomFitHeightBtn.onclick = () => {
             if (win.pdfPagesRendered && win.pdfPagesRendered.length > 0) {
-              const pdfViewerContainer = doc.getElementById(
-                "pdf-viewer-container",
-              );
+              const pdfViewerContainer = doc.getElementById("pdf-viewer-container");
               const containerHeight = pdfViewerContainer.clientHeight - 45;
-              const originalPageHeight =
-                win.pdfPagesRendered[0].viewport.height;
+              const originalPageHeight = win.pdfPagesRendered[0].viewport.height;
               const fitZoom = containerHeight / originalPageHeight;
               setPdfZoom(fitZoom);
             }
@@ -3176,15 +3317,220 @@
           { passive: false },
         );
 
-        pdfUpload.addEventListener("change", async (e) => {
-          const file = e.target.files[0];
-          if (!file) return;
-          const fileUrl = URL.createObjectURL(file);
-          loadPdfInWindow(win, fileUrl);
-        });
+        const exportPdfBtn = doc.getElementById("export-pdf-btn");
+        if (exportPdfBtn) {
+          exportPdfBtn.onclick = async () => {
+            if (!win.pdfPagesRendered || win.pdfPagesRendered.length === 0) {
+              win.alert("尚未載入任何 PDF 樂譜！");
+              return;
+            }
 
-        win.loadPdfInWindowGlobally = async (data) =>
-          loadPdfInWindow(win, data);
+            // 動態載入 jsPDF 函式庫
+            if (!win.jspdf) {
+              const prevText = exportPdfBtn.textContent;
+              exportPdfBtn.textContent = "載入組件...";
+              await new Promise((resolve, reject) => {
+                const script = doc.createElement("script");
+                script.src = "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+                script.onload = resolve;
+                script.onerror = reject;
+                doc.head.appendChild(script);
+              });
+              exportPdfBtn.textContent = prevText;
+            }
+
+            const originalBtnText = exportPdfBtn.textContent;
+            exportPdfBtn.textContent = "匯出中...";
+            exportPdfBtn.disabled = true;
+
+            try {
+              const { jsPDF } = win.jspdf;
+              let pdfDoc = null;
+
+              for (let idx = 0; idx < win.pdfPagesRendered.length; idx++) {
+                const pageData = win.pdfPagesRendered[idx];
+                const pageNum = idx + 1;
+                const origCanvas = pageData.container.querySelector("canvas");
+                const w = origCanvas.width;
+                const h = origCanvas.height;
+
+                // 建立用於合成原譜、方框與文字的高解析離屏畫布
+                const mergeCanvas = doc.createElement("canvas");
+                mergeCanvas.width = w;
+                mergeCanvas.height = h;
+                const ctx = mergeCanvas.getContext("2d");
+
+                // 1. 繪製原始樂譜背景
+                ctx.drawImage(origCanvas, 0, 0);
+
+                // 2. 繪製方框註記
+                const pageBoxes = pdfBoxAnnotations.filter((b) => b.pageNum === pageNum);
+                pageBoxes.forEach((box) => {
+                  const bx = box.xRatio * w;
+                  const by = box.yRatio * h;
+                  const bw = box.widthRatio * w;
+                  const bh = box.heightRatio * h;
+                  const radius = (box.borderRadius || 0) * (w / (pageData.container.offsetWidth || w));
+
+                  ctx.save();
+                  ctx.beginPath();
+                  if (ctx.roundRect) {
+                    ctx.roundRect(bx, by, bw, bh, radius);
+                  } else {
+                    ctx.rect(bx, by, bw, bh);
+                  }
+
+                  if (box.bg && box.bg !== "transparent") {
+                    ctx.fillStyle = box.bg;
+                    ctx.fill();
+                  }
+
+                  if (box.borderStyle && box.borderStyle !== "none") {
+                    ctx.strokeStyle = box.stroke || "#dc2626";
+                    ctx.lineWidth = (box.borderWidth || 2) * (w / (pageData.container.offsetWidth || w));
+
+                    if (box.borderStyle === "dashed") {
+                      ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 2]);
+                    } else if (box.borderStyle === "dotted") {
+                      ctx.setLineDash([ctx.lineWidth, ctx.lineWidth * 1.5]);
+                    } else {
+                      ctx.setLineDash([]);
+                    }
+                    ctx.stroke();
+                  }
+                  ctx.restore();
+                });
+
+                // 3. 繪製文字註記
+                const pageTexts = pdfTextAnnotations.filter((t) => t.pageNum === pageNum);
+                pageTexts.forEach((textItem) => {
+                  const tx = textItem.xRatio * w;
+                  const ty = textItem.yRatio * h;
+                  const scaleFactor = w / (pageData.container.offsetWidth || w);
+                  const fontSize = (textItem.fontSize || 24) * scaleFactor;
+                  const paddingH = 8 * scaleFactor;
+                  const paddingV = 4 * scaleFactor;
+                  const textStr = textItem.text || "";
+
+                  ctx.save();
+                  let fontStyleStr = "";
+                  if (textItem.italic) fontStyleStr += "italic ";
+                  if (textItem.bold) fontStyleStr += "bold ";
+                  ctx.font = `${fontStyleStr}${fontSize}px sans-serif`;
+                  ctx.textBaseline = "middle";
+
+                  const isVertical = textItem.direction === "vertical";
+
+                  if (isVertical) {
+                    const charCount = textStr.length;
+                    const blockW = fontSize + paddingH * 2;
+                    const blockH = charCount * fontSize + paddingV * 2;
+                    const startX = tx - blockW / 2;
+                    const startY = ty - blockH / 2;
+
+                    // 背景色
+                    if (textItem.bg && textItem.bg !== "transparent") {
+                      ctx.fillStyle = textItem.bg;
+                      ctx.fillRect(startX, startY, blockW, blockH);
+                    }
+
+                    // 邊框
+                    if (textItem.borderStyle && textItem.borderStyle !== "none") {
+                      ctx.strokeStyle = textItem.stroke || "#1e293b";
+                      ctx.lineWidth = (textItem.borderWidth || 1) * scaleFactor;
+                      if (textItem.borderStyle === "dashed") ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 2]);
+                      else if (textItem.borderStyle === "dotted") ctx.setLineDash([ctx.lineWidth, ctx.lineWidth * 1.5]);
+                      else ctx.setLineDash([]);
+                      ctx.strokeRect(startX, startY, blockW, blockH);
+                    }
+
+                    // 逐字繪製垂直文字
+                    ctx.fillStyle = textItem.stroke || "#1e293b";
+                    ctx.textAlign = "center";
+                    for (let c = 0; c < charCount; c++) {
+                      ctx.fillText(textStr[c], startX + blockW / 2, startY + paddingV + (c + 0.5) * fontSize);
+                    }
+                  } else {
+                    const textMetrics = ctx.measureText(textStr);
+                    const textW = textMetrics.width;
+                    const blockW = textW + paddingH * 2;
+                    const blockH = fontSize * 1.2 + paddingV * 2;
+                    const startX = tx - blockW / 2;
+                    const startY = ty - blockH / 2;
+
+                    // 背景色
+                    if (textItem.bg && textItem.bg !== "transparent") {
+                      ctx.fillStyle = textItem.bg;
+                      ctx.fillRect(startX, startY, blockW, blockH);
+                    }
+
+                    // 邊框
+                    if (textItem.borderStyle && textItem.borderStyle !== "none") {
+                      ctx.strokeStyle = textItem.stroke || "#1e293b";
+                      ctx.lineWidth = (textItem.borderWidth || 1) * scaleFactor;
+                      if (textItem.borderStyle === "dashed") ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 2]);
+                      else if (textItem.borderStyle === "dotted") ctx.setLineDash([ctx.lineWidth, ctx.lineWidth * 1.5]);
+                      else ctx.setLineDash([]);
+                      ctx.strokeRect(startX, startY, blockW, blockH);
+                    }
+
+                    // 水平文字
+                    ctx.fillStyle = textItem.stroke || "#1e293b";
+                    let drawX = startX + paddingH;
+                    if (textItem.align === "center") {
+                      ctx.textAlign = "center";
+                      drawX = startX + blockW / 2;
+                    } else if (textItem.align === "right") {
+                      ctx.textAlign = "right";
+                      drawX = startX + blockW - paddingH;
+                    } else {
+                      ctx.textAlign = "left";
+                    }
+                    ctx.fillText(textStr, drawX, ty);
+
+                    // 底線
+                    if (textItem.underline) {
+                      ctx.lineWidth = Math.max(1, fontSize / 14);
+                      ctx.strokeStyle = textItem.stroke || "#1e293b";
+                      ctx.beginPath();
+                      ctx.moveTo(startX + paddingH, ty + fontSize * 0.55);
+                      ctx.lineTo(startX + blockW - paddingH, ty + fontSize * 0.55);
+                      ctx.stroke();
+                    }
+                  }
+                  ctx.restore();
+                });
+
+                // 將合成後的影像填入 jsPDF
+                const imgData = mergeCanvas.toDataURL("image/jpeg", 0.95);
+                const orientation = w > h ? "landscape" : "portrait";
+
+                if (idx === 0) {
+                  pdfDoc = new jsPDF({
+                    orientation: orientation,
+                    unit: "pt",
+                    format: [w, h],
+                  });
+                } else {
+                  pdfDoc.addPage([w, h], orientation);
+                }
+                pdfDoc.addImage(imgData, "JPEG", 0, 0, w, h);
+              }
+
+              // 下載匯出的新 PDF
+              const exportName = (window.currentVideoName ? window.currentVideoName.replace(/\.[^/.]+$/, "") : "sheet_music") + "_annotated.pdf";
+              pdfDoc.save(exportName);
+            } catch (err) {
+              console.error("匯出 PDF 失敗:", err);
+              win.alert("匯出 PDF 時發生錯誤，請檢視控制台。");
+            } finally {
+              exportPdfBtn.textContent = originalBtnText;
+              exportPdfBtn.disabled = false;
+            }
+          };
+        }
+
+        win.loadPdfInWindowGlobally = async (data) => loadPdfInWindow(win, data);
 
         async function loadPdfInWindow(w, data) {
           const d = w.document;
@@ -3202,8 +3548,7 @@
               const page = await currentPdfDoc.getPage(i);
               const isMobileOrTablet =
                 /iPad|iPhone|iPod|Android/.test(navigator.userAgent) ||
-                (navigator.platform === "MacIntel" &&
-                  navigator.maxTouchPoints > 1);
+                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
               const renderScale = isMobileOrTablet ? 1.2 : 2.0;
 
               const viewport = page.getViewport({ scale: renderScale });
@@ -3222,7 +3567,7 @@
               canvas.style.display = "block";
               pageContainer.appendChild(canvas);
 
-              // 錨點層
+              // 錨點層 (z-10)
               const anchorContainer = d.createElement("div");
               anchorContainer.style.position = "absolute";
               anchorContainer.style.inset = "0";
@@ -3230,7 +3575,15 @@
               anchorContainer.style.zIndex = "10";
               pageContainer.appendChild(anchorContainer);
 
-              // 文字註解層
+              // 方框層 (z-15)
+              const boxContainer = d.createElement("div");
+              boxContainer.style.position = "absolute";
+              boxContainer.style.inset = "0";
+              boxContainer.style.pointerEvents = "none";
+              boxContainer.style.zIndex = "15";
+              pageContainer.appendChild(boxContainer);
+
+              // 文字註解層 (z-20)
               const textContainer = d.createElement("div");
               textContainer.style.position = "absolute";
               textContainer.style.inset = "0";
@@ -3254,16 +3607,9 @@
                 const xRatio = x / rect.width;
                 const yRatio = y / rect.height;
 
-                const existingIdx = pdfAnchors.findIndex(
-                  (a) => a.regionName === regionName,
-                );
+                const existingIdx = pdfAnchors.findIndex((a) => a.regionName === regionName);
                 if (existingIdx >= 0) {
-                  pdfAnchors[existingIdx] = {
-                    regionName,
-                    pageNum: i,
-                    xRatio,
-                    yRatio,
-                  };
+                  pdfAnchors[existingIdx] = { regionName, pageNum: i, xRatio, yRatio };
                 } else {
                   pdfAnchors.push({ regionName, pageNum: i, xRatio, yRatio });
                 }
@@ -3276,6 +3622,7 @@
               w.pdfPagesRendered.push({
                 container: pageContainer,
                 anchorContainer,
+                boxContainer,
                 textContainer,
                 viewport,
               });
@@ -3289,6 +3636,7 @@
 
             window.renderPdfAnchorsInWindow(w);
             window.renderPdfTextAnnotations(w);
+            window.renderPdfBoxAnnotations(w);
 
             const zoomFitBtn = d.getElementById("zoom-fit-btn");
             if (zoomFitBtn) zoomFitBtn.click();
@@ -3297,10 +3645,10 @@
           }
         }
 
-        // 點擊新增文字（改用原生 input，保證點擊立刻能打字）
-                                pdfViewerContainer.addEventListener("click", (e) => {
-          if (!isTextMode) return;
-          if (e.target && (e.target.closest(".sheet-text-item") || e.target.closest(".anchor-mark") || e.target.closest("#text-editor-panel") || e.target.closest("#text-tool-btn"))) {
+        // 點擊新增文字或方框
+        pdfViewerContainer.addEventListener("click", (e) => {
+          if (!isTextMode && !isBoxMode) return;
+          if (e.target && (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".anchor-mark") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn"))) {
             return;
           }
           const targetPage = e.target.closest(".page-container");
@@ -3314,45 +3662,83 @@
           const clientX = e.clientX;
           const clientY = e.clientY;
 
-          const xRatio = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
-          const yRatio = Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height));
+          // 處理文字模式
+          if (isTextMode) {
+            const xRatio = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
+            const yRatio = Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height));
 
-          const newText = {
-            id: Date.now(),
-            pageNum: pageNum,
-            xRatio: xRatio,
-            yRatio: yRatio,
-            text: "",
-            ...currentTextProps,
-          };
+            const newText = {
+              id: Date.now(),
+              pageNum: pageNum,
+              xRatio: xRatio,
+              yRatio: yRatio,
+              text: "",
+              ...currentTextProps,
+            };
 
-          pdfTextAnnotations.push(newText);
-          activeTextId = newText.id;
-          isTextMode = false;
-          updateTextButtonUI();
+            pdfTextAnnotations.push(newText);
+            activeTextId = newText.id;
+            isTextMode = false;
+            updateToolButtonsUI();
 
-          window.renderPdfTextAnnotations(win);
-          if (textPanel) {
-            textPanel.style.display = "block";
-            syncPanelUI(newText);
-          }
-          try { saveState(); } catch (err) {}
-
-                              setTimeout(() => {
-            const newEl = win.document.getElementById(`text-item-${newText.id}`);
-            if (newEl) {
-              const inputEl = newEl.querySelector(".sheet-text-content");
-              if (inputEl) {
-                inputEl.setAttribute("contenteditable", "true");
-                inputEl.focus();
-                const range = win.document.createRange();
-                range.selectNodeContents(inputEl);
-                const sel = win.getSelection();
-                sel.removeAllRanges();
-                sel.addRange(range);
-              }
+            window.renderPdfTextAnnotations(win);
+            if (textPanel) {
+              textPanel.style.display = "block";
+              syncTextPanelUI(newText);
             }
-          }, 60);
+            try { saveState(); } catch (err) {}
+
+            setTimeout(() => {
+              const newEl = win.document.getElementById(`text-item-${newText.id}`);
+              if (newEl) {
+                const inputEl = newEl.querySelector(".sheet-text-content");
+                if (inputEl) {
+                  inputEl.setAttribute("contenteditable", "true");
+                  inputEl.focus();
+                  const range = win.document.createRange();
+                  range.selectNodeContents(inputEl);
+                  const sel = win.getSelection();
+                  sel.removeAllRanges();
+                  sel.addRange(range);
+                }
+              }
+            }, 60);
+            return;
+          }
+
+          // 處理方框模式
+          if (isBoxMode) {
+            const defaultWidthRatio = 0.16; // 預設寬度約佔頁面 16%
+            const defaultHeightRatio = 0.08; // 預設高度約佔頁面 8%
+
+            const clickXRatio = (clientX - rect.left) / rect.width;
+            const clickYRatio = (clientY - rect.top) / rect.height;
+
+            const xRatio = Math.max(0.01, Math.min(1 - defaultWidthRatio, clickXRatio - defaultWidthRatio / 2));
+            const yRatio = Math.max(0.01, Math.min(1 - defaultHeightRatio, clickYRatio - defaultHeightRatio / 2));
+
+            const newBox = {
+              id: Date.now(),
+              pageNum: pageNum,
+              xRatio: xRatio,
+              yRatio: yRatio,
+              widthRatio: defaultWidthRatio,
+              heightRatio: defaultHeightRatio,
+              ...currentBoxProps,
+            };
+
+            pdfBoxAnnotations.push(newBox);
+            activeBoxId = newBox.id;
+            isBoxMode = false;
+            updateToolButtonsUI();
+
+            window.renderPdfBoxAnnotations(win);
+            if (boxPanel) {
+              boxPanel.style.display = "block";
+              syncBoxPanelUI(newBox);
+            }
+            try { saveState(); } catch (err) {}
+          }
         });
 
         // 快捷鍵控制
@@ -3360,7 +3746,7 @@
           const activeEl = win.document.activeElement;
           const isEditingText = activeEl && (activeEl.isContentEditable || activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
 
-                    if (!isEditingText) {
+          if (!isEditingText) {
             if (e.key === " ") {
               e.preventDefault();
               document.body.dispatchEvent(
@@ -3387,19 +3773,33 @@
             }
           }
 
-          if ((e.key === "Delete" || e.key === "Backspace") && !isEditingText && activeTextId) {
-            e.preventDefault();
-            pdfTextAnnotations = pdfTextAnnotations.filter((t) => t.id !== activeTextId);
-            activeTextId = null;
-            if (textPanel) textPanel.style.display = "none";
-            window.renderPdfTextAnnotations(win);
-            try { saveState(); } catch (err) {}
+          if ((e.key === "Delete" || e.key === "Backspace") && !isEditingText) {
+            let modified = false;
+            if (activeTextId) {
+              e.preventDefault();
+              pdfTextAnnotations = pdfTextAnnotations.filter((t) => t.id !== activeTextId);
+              activeTextId = null;
+              if (textPanel) textPanel.style.display = "none";
+              window.renderPdfTextAnnotations(win);
+              modified = true;
+            }
+            if (activeBoxId) {
+              e.preventDefault();
+              pdfBoxAnnotations = pdfBoxAnnotations.filter((b) => b.id !== activeBoxId);
+              activeBoxId = null;
+              if (boxPanel) boxPanel.style.display = "none";
+              window.renderPdfBoxAnnotations(win);
+              modified = true;
+            }
+            if (modified) {
+              try { saveState(); } catch (err) {}
+            }
           }
         });
 
-        // 點擊空白處取消文字選中
+        // 點擊空白處取消文字/方框選中
         doc.addEventListener("click", (e) => {
-          if (e.target.closest(".sheet-text-item") || e.target.closest("#text-editor-panel") || e.target.closest("#text-tool-btn")) {
+          if (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn")) {
             return;
           }
           if (activeTextId) {
@@ -3407,6 +3807,12 @@
             if (el) el.classList.remove("selected");
             activeTextId = null;
             if (textPanel) textPanel.style.display = "none";
+          }
+          if (activeBoxId) {
+            const el = doc.getElementById(`box-item-${activeBoxId}`);
+            if (el) el.classList.remove("selected");
+            activeBoxId = null;
+            if (boxPanel) boxPanel.style.display = "none";
           }
         });
 
@@ -3421,7 +3827,7 @@
           if (p.textContainer) p.textContainer.innerHTML = "";
         });
 
-                        pdfTextAnnotations.forEach((item) => {
+        pdfTextAnnotations.forEach((item) => {
           const pageData = win.pdfPagesRendered[item.pageNum - 1];
           if (!pageData || !pageData.textContainer) return;
 
@@ -3433,7 +3839,7 @@
           textEl.style.color = item.stroke;
           textEl.style.backgroundColor = item.bg;
           textEl.style.border = `${item.borderWidth}px ${item.borderStyle} ${item.stroke}`;
-                    textEl.style.fontSize = `${item.fontSize}px`;
+          textEl.style.fontSize = `${item.fontSize}px`;
           textEl.style.textAlign = item.align;
           textEl.style.fontWeight = item.bold ? "700" : "400";
           textEl.style.fontStyle = item.italic ? "italic" : "normal";
@@ -3447,7 +3853,7 @@
             textEl.style.textOrientation = "mixed";
           }
 
-                    textEl.innerHTML = `
+          textEl.innerHTML = `
             <div class="sheet-text-content" contenteditable="false" spellcheck="false">${item.text}</div>
             <div class="remove-text-btn" style="position:absolute; top:-8px; right:-8px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; display:none; align-items:center; justify-content:center; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); z-index:40; border:1.5px solid white;" title="刪除">✕</div>
           `;
@@ -3459,7 +3865,6 @@
             removeBtn.style.display = "flex";
           }
 
-          // 雙擊進入編輯模式
           contentEl.addEventListener("dblclick", (e) => {
             e.stopPropagation();
             contentEl.setAttribute("contenteditable", "true");
@@ -3472,14 +3877,12 @@
             sel.addRange(range);
           });
 
-          // 內容修改保存，並離開編輯模式（恢復可拖動狀態）
           contentEl.addEventListener("blur", () => {
             item.text = contentEl.innerText.trim() || "文字";
             contentEl.setAttribute("contenteditable", "false");
             saveState();
           });
 
-          // 刪除按鈕
           removeBtn.addEventListener("click", (e) => {
             e.stopPropagation();
             pdfTextAnnotations = pdfTextAnnotations.filter((t) => t.id !== item.id);
@@ -3491,46 +3894,34 @@
             saveState();
           });
 
-          // 選取文字物件與顯示編輯面板
           textEl.addEventListener("mousedown", (e) => {
             if (e.target.classList.contains("remove-text-btn")) return;
             e.stopPropagation();
 
             activeTextId = item.id;
+            activeBoxId = null; // 取消方框選取
             win.document.querySelectorAll(".sheet-text-item").forEach((el) => el.classList.remove("selected"));
+            win.document.querySelectorAll(".sheet-box-item").forEach((el) => el.classList.remove("selected"));
             textEl.classList.add("selected");
             removeBtn.style.display = "flex";
+
+            const boxPanel = win.document.getElementById("box-editor-panel");
+            if (boxPanel) boxPanel.style.display = "none";
 
             const panel = win.document.getElementById("text-editor-panel");
             if (panel) {
               panel.style.display = "block";
-              // 同步面板樣式狀態
-              win.document.querySelectorAll("#stroke-color-grid .color-btn").forEach((b) => {
-                b.classList.toggle("active", b.dataset.stroke === item.stroke);
-              });
-              win.document.querySelectorAll("#bg-color-grid .color-btn").forEach((b) => {
-                b.classList.toggle("active", b.dataset.bg === item.bg);
-              });
-              win.document.querySelectorAll("#border-width-control .segment-item").forEach((b) => {
-                b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth);
-              });
-              win.document.querySelectorAll("#border-style-control .segment-item").forEach((b) => {
-                b.classList.toggle("active", b.dataset.style === item.borderStyle);
-              });
+              win.document.querySelectorAll("#stroke-color-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.stroke === item.stroke));
+              win.document.querySelectorAll("#bg-color-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.bg === item.bg));
+              win.document.querySelectorAll("#border-width-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth));
+              win.document.querySelectorAll("#border-style-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.style === item.borderStyle));
               win.document.getElementById("font-size-val").textContent = item.fontSize;
-              win.document.querySelectorAll("#text-align-control .segment-item").forEach((b) => {
-                b.classList.toggle("active", b.dataset.align === item.align);
-              });
-                            win.document.querySelectorAll("#writing-dir-control .segment-item").forEach((b) => {
-                b.classList.toggle("active", b.dataset.dir === item.direction);
-              });
-              win.document.querySelectorAll("#text-format-control .segment-item").forEach((b) => {
-                b.classList.toggle("active", !!item[b.dataset.format]);
-              });
+              win.document.querySelectorAll("#text-align-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.align === item.align));
+              win.document.querySelectorAll("#writing-dir-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.dir === item.direction));
+              win.document.querySelectorAll("#text-format-control .segment-item").forEach((b) => b.classList.toggle("active", !!item[b.dataset.format]));
             }
           });
 
-          // 拖曳移動文字標籤
           let isDragging = false;
           let dragStartX = 0, dragStartY = 0;
           let moved = false;
@@ -3588,7 +3979,191 @@
           win.document.addEventListener("mouseup", onStopDrag);
           win.document.addEventListener("touchend", onStopDrag);
 
-                              pageData.textContainer.appendChild(textEl);
+          pageData.textContainer.appendChild(textEl);
+        });
+      };
+
+      // 渲染所有頁面上的方框標籤 (支援移動與右下角縮放控點)
+      window.renderPdfBoxAnnotations = function (win) {
+        if (!win || !win.pdfPagesRendered) return;
+
+        win.pdfPagesRendered.forEach((p) => {
+          if (p.boxContainer) p.boxContainer.innerHTML = "";
+        });
+
+        pdfBoxAnnotations.forEach((item) => {
+          const pageData = win.pdfPagesRendered[item.pageNum - 1];
+          if (!pageData || !pageData.boxContainer) return;
+
+          const boxEl = win.document.createElement("div");
+          boxEl.id = `box-item-${item.id}`;
+          boxEl.className = `sheet-box-item ${activeBoxId === item.id ? "selected" : ""}`;
+          boxEl.style.left = item.xRatio * 100 + "%";
+          boxEl.style.top = item.yRatio * 100 + "%";
+          boxEl.style.width = item.widthRatio * 100 + "%";
+          boxEl.style.height = item.heightRatio * 100 + "%";
+          boxEl.style.backgroundColor = item.bg;
+          boxEl.style.border = `${item.borderWidth}px ${item.borderStyle} ${item.stroke}`;
+          boxEl.style.borderRadius = `${item.borderRadius}px`;
+
+          boxEl.innerHTML = `
+            <div class="remove-box-btn" style="position:absolute; top:-8px; right:-8px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; display:${activeBoxId === item.id ? 'flex' : 'none'}; align-items:center; justify-content:center; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); z-index:40; border:1.5px solid white;" title="刪除">✕</div>
+            <div class="box-resizer" style="display:${activeBoxId === item.id ? 'block' : 'none'};"></div>
+          `;
+
+          const removeBtn = boxEl.querySelector(".remove-box-btn");
+          const resizerBtn = boxEl.querySelector(".box-resizer");
+
+          // 刪除方框
+          removeBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            pdfBoxAnnotations = pdfBoxAnnotations.filter((b) => b.id !== item.id);
+            if (activeBoxId === item.id) {
+              activeBoxId = null;
+              win.document.getElementById("box-editor-panel").style.display = "none";
+            }
+            window.renderPdfBoxAnnotations(win);
+            saveState();
+          });
+
+          // 選取方框並喚出方框設定面板
+          boxEl.addEventListener("mousedown", (e) => {
+            if (e.target.classList.contains("remove-box-btn") || e.target.classList.contains("box-resizer")) return;
+            e.stopPropagation();
+
+            activeBoxId = item.id;
+            activeTextId = null; // 取消文字選取
+            win.document.querySelectorAll(".sheet-box-item").forEach((el) => el.classList.remove("selected"));
+            win.document.querySelectorAll(".sheet-text-item").forEach((el) => el.classList.remove("selected"));
+            boxEl.classList.add("selected");
+            removeBtn.style.display = "flex";
+            resizerBtn.style.display = "block";
+
+            const textPanel = win.document.getElementById("text-editor-panel");
+            if (textPanel) textPanel.style.display = "none";
+
+            const panel = win.document.getElementById("box-editor-panel");
+            if (panel) {
+              panel.style.display = "block";
+              win.document.querySelectorAll("#box-stroke-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.stroke === item.stroke));
+              win.document.querySelectorAll("#box-bg-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.bg === item.bg));
+              win.document.querySelectorAll("#box-width-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth));
+              win.document.querySelectorAll("#box-style-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.style === item.borderStyle));
+              win.document.querySelectorAll("#box-edges-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.radius) === item.borderRadius));
+            }
+          });
+
+          // --- 方框拖曳移動 ---
+          let isDragging = false;
+          let dragStartX = 0, dragStartY = 0;
+          let moved = false;
+
+          const onStartDrag = (e) => {
+            if (e.target.classList.contains("remove-box-btn") || e.target.classList.contains("box-resizer")) return;
+            isDragging = true;
+            moved = false;
+            dragStartX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
+            dragStartY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+            boxEl.style.cursor = "grabbing";
+          };
+
+          const onDoDrag = (e) => {
+            if (!isDragging) return;
+            const clientX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+
+            if (Math.abs(clientX - dragStartX) > 4 || Math.abs(clientY - dragStartY) > 4) {
+              moved = true;
+            }
+
+            if (moved) {
+              e.preventDefault();
+              const rect = pageData.container.getBoundingClientRect();
+              let nx = (clientX - dragStartX) / rect.width + item.xRatio;
+              let ny = (clientY - dragStartY) / rect.height + item.yRatio;
+
+              nx = Math.max(0, Math.min(1 - item.widthRatio, nx));
+              ny = Math.max(0, Math.min(1 - item.heightRatio, ny));
+
+              boxEl.style.left = nx * 100 + "%";
+              boxEl.style.top = ny * 100 + "%";
+              boxEl.dataset.newX = nx;
+              boxEl.dataset.newY = ny;
+            }
+          };
+
+          const onStopDrag = () => {
+            if (isDragging) {
+              isDragging = false;
+              boxEl.style.cursor = "grab";
+              if (moved && boxEl.dataset.newX !== undefined) {
+                item.xRatio = parseFloat(boxEl.dataset.newX);
+                item.yRatio = parseFloat(boxEl.dataset.newY);
+                saveState();
+              }
+            }
+          };
+
+          boxEl.addEventListener("mousedown", onStartDrag);
+          boxEl.addEventListener("touchstart", onStartDrag, { passive: true });
+          win.document.addEventListener("mousemove", onDoDrag);
+          win.document.addEventListener("touchmove", onDoDrag, { passive: false });
+          win.document.addEventListener("mouseup", onStopDrag);
+          win.document.addEventListener("touchend", onStopDrag);
+
+          // --- 右下角縮放控點拖曳 ---
+          let isResizing = false;
+          let resizeStartX = 0, resizeStartY = 0;
+          let initialW = 0, initialH = 0;
+
+          const onStartResize = (e) => {
+            e.stopPropagation();
+            isResizing = true;
+            resizeStartX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
+            resizeStartY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+            initialW = item.widthRatio;
+            initialH = item.heightRatio;
+          };
+
+          const onDoResize = (e) => {
+            if (!isResizing) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const clientX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
+            const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+
+            const rect = pageData.container.getBoundingClientRect();
+            const dw = (clientX - resizeStartX) / rect.width;
+            const dh = (clientY - resizeStartY) / rect.height;
+
+            const nw = Math.max(0.03, Math.min(1 - item.xRatio, initialW + dw));
+            const nh = Math.max(0.02, Math.min(1 - item.yRatio, initialH + dh));
+
+            boxEl.style.width = nw * 100 + "%";
+            boxEl.style.height = nh * 100 + "%";
+            boxEl.dataset.newW = nw;
+            boxEl.dataset.newH = nh;
+          };
+
+          const onStopResize = () => {
+            if (isResizing) {
+              isResizing = false;
+              if (boxEl.dataset.newW !== undefined) {
+                item.widthRatio = parseFloat(boxEl.dataset.newW);
+                item.heightRatio = parseFloat(boxEl.dataset.newH);
+                saveState();
+              }
+            }
+          };
+
+          resizerBtn.addEventListener("mousedown", onStartResize);
+          resizerBtn.addEventListener("touchstart", onStartResize, { passive: false });
+          win.document.addEventListener("mousemove", onDoResize);
+          win.document.addEventListener("touchmove", onDoResize, { passive: false });
+          win.document.addEventListener("mouseup", onStopResize);
+          win.document.addEventListener("touchend", onStopResize);
+
+          pageData.boxContainer.appendChild(boxEl);
         });
       };
 

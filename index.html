@@ -3741,13 +3741,141 @@
           }
         });
 
+        // --- 節拍器功能元件 (高精度 Web Audio 硬體排程引擎) ---
+        let bpm = 120;
+        let isMetronomeRunning = false;
+        let audioCtx = null;
+        let nextNoteTime = 0.0;
+        let timerWorkerId = null;
+        const lookahead = 25.0; // 每 25ms 檢查排程
+        const scheduleAheadTime = 0.15; // 提前將未來 0.15 秒的音符推入硬體時間軸
+
+        // 建立左側節拍器浮動容器
+        const metroContainer = doc.createElement("div");
+        metroContainer.id = "sheet-metronome-container";
+        metroContainer.style.cssText = "position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:90; display:flex; flex-direction:column; align-items:center; background:rgba(31,41,55,0.85); backdrop-filter:blur(8px); padding:14px 10px; border-radius:30px; border:1px solid #4b5563; box-shadow:0 8px 20px rgba(0,0,0,0.5); user-select:none;";
+
+        metroContainer.innerHTML = `
+          <div id="bpm-val" style="font-family:monospace; font-size:15px; font-weight:bold; color:#60a5fa; margin-bottom:10px;">120</div>
+          <div style="height:170px; display:flex; align-items:center; justify-content:center; padding:6px 0;">
+            <input type="range" id="bpm-slider" min="30" max="244" step="1" value="120" style="writing-mode:vertical-lr; direction:rtl; width:8px; height:150px; cursor:pointer; accent-color:#3b82f6;" />
+          </div>
+          <button id="metro-play-btn" style="margin-top:12px; width:44px; height:44px; border-radius:50%; border:none; background:#374151; color:#9ca3af; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:0 2px 6px rgba(0,0,0,0.3);" title="節拍器 (Enter 開始/暫停，左右鍵 ±5 BPM)">
+            <svg id="drum-icon" style="width:24px; height:24px;" viewBox="0 0 24 24" fill="currentColor">
+              <ellipse cx="12" cy="7" rx="9" ry="3" fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M3 7v10c0 1.66 4.03 3 9 3s9-1.34 9-3V7" fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" fill="none" stroke="currentColor" stroke-width="2"/>
+              <path d="M7 3l4 4M17 3l-4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        `;
+        doc.querySelector(".main-area").appendChild(metroContainer);
+
+        const bpmSlider = doc.getElementById("bpm-slider");
+        const bpmVal = doc.getElementById("bpm-val");
+        const metroPlayBtn = doc.getElementById("metro-play-btn");
+
+        // 精確在硬體時間 t 觸發鼓聲
+        function scheduleDrumSound(time) {
+          // 低音 Kick
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(160, time);
+          osc.frequency.exponentialRampToValueAtTime(40, time + 0.08);
+          gain.gain.setValueAtTime(1.0, time);
+          gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(time);
+          osc.stop(time + 0.08);
+
+          // 擊打高頻噪音
+          const bSize = audioCtx.sampleRate * 0.04;
+          const b = audioCtx.createBuffer(1, bSize, audioCtx.sampleRate);
+          const data = b.getChannelData(0);
+          for (let i = 0; i < bSize; i++) data[i] = Math.random() * 2 - 1;
+          const noise = audioCtx.createBufferSource();
+          noise.buffer = b;
+          const nFilter = audioCtx.createBiquadFilter();
+          nFilter.type = "bandpass";
+          nFilter.frequency.value = 1200;
+          const nGain = audioCtx.createGain();
+          nGain.gain.setValueAtTime(0.4, time);
+          nGain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+          noise.connect(nFilter);
+          nFilter.connect(nGain);
+          nGain.connect(audioCtx.destination);
+          noise.start(time);
+        }
+
+        // 調度循環：確保時間軸不斷提前排程
+        function scheduler() {
+          while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
+            scheduleDrumSound(nextNoteTime);
+            nextNoteTime += 60.0 / bpm;
+          }
+          if (isMetronomeRunning) {
+            timerWorkerId = setTimeout(scheduler, lookahead);
+          }
+        }
+
+        function setBpm(newBpm) {
+          bpm = Math.max(30, Math.min(244, Math.round(newBpm)));
+          bpmVal.textContent = bpm;
+          bpmSlider.value = bpm;
+        }
+
+        bpmSlider.addEventListener("input", (e) => setBpm(e.target.value));
+
+        function toggleMetronome() {
+          if (!audioCtx) {
+            audioCtx = new (win.AudioContext || win.webkitAudioContext)();
+          }
+          if (audioCtx.state === "suspended") {
+            audioCtx.resume();
+          }
+
+          isMetronomeRunning = !isMetronomeRunning;
+          if (isMetronomeRunning) {
+            metroPlayBtn.style.background = "#2563eb";
+            metroPlayBtn.style.color = "#ffffff";
+            metroPlayBtn.style.transform = "scale(1.1)";
+            nextNoteTime = audioCtx.currentTime + 0.05; // 稍微預留啟動時間
+            scheduler();
+          } else {
+            metroPlayBtn.style.background = "#374151";
+            metroPlayBtn.style.color = "#9ca3af";
+            metroPlayBtn.style.transform = "scale(1.0)";
+            clearTimeout(timerWorkerId);
+            timerWorkerId = null;
+          }
+        }
+
+        metroPlayBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          toggleMetronome();
+        });
+
         // 快捷鍵控制
         win.document.addEventListener("keydown", (e) => {
           const activeEl = win.document.activeElement;
           const isEditingText = activeEl && (activeEl.isContentEditable || activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
 
           if (!isEditingText) {
-            if (e.key === " ") {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              toggleMetronome();
+              return;
+            } else if (e.key === "ArrowRight") {
+              e.preventDefault();
+              setBpm(bpm + 5);
+              return;
+            } else if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              setBpm(bpm - 5);
+              return;
+            } else if (e.key === " ") {
               e.preventDefault();
               document.body.dispatchEvent(
                 new KeyboardEvent("keydown", {
@@ -3799,7 +3927,7 @@
 
         // 點擊空白處取消文字/方框選中
         doc.addEventListener("click", (e) => {
-          if (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn")) {
+          if (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn") || e.target.closest("#sheet-metronome-container")) {
             return;
           }
           if (activeTextId) {

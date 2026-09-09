@@ -837,6 +837,8 @@
             typeof customRegions !== "undefined"
               ? JSON.parse(JSON.stringify(customRegions))
               : [],
+          pdfTextAnnotations: JSON.parse(JSON.stringify(pdfTextAnnotations || [])),
+          pdfBoxAnnotations: JSON.parse(JSON.stringify(pdfBoxAnnotations || [])),
         });
         historyIndex++;
       }
@@ -850,6 +852,16 @@
             customRegions = JSON.parse(JSON.stringify(state.regions));
             renderRegions();
           }
+          if (state.pdfTextAnnotations) {
+            pdfTextAnnotations = JSON.parse(JSON.stringify(state.pdfTextAnnotations));
+          }
+          if (state.pdfBoxAnnotations) {
+            pdfBoxAnnotations = JSON.parse(JSON.stringify(state.pdfBoxAnnotations));
+          }
+          if (sheetWindow && !sheetWindow.closed) {
+            if (typeof window.renderPdfTextAnnotations === "function") window.renderPdfTextAnnotations(sheetWindow);
+            if (typeof window.renderPdfBoxAnnotations === "function") window.renderPdfBoxAnnotations(sheetWindow);
+          }
           renderTimeline();
         }
       }
@@ -862,6 +874,16 @@
           if (typeof customRegions !== "undefined" && state.regions) {
             customRegions = JSON.parse(JSON.stringify(state.regions));
             renderRegions();
+          }
+          if (state.pdfTextAnnotations) {
+            pdfTextAnnotations = JSON.parse(JSON.stringify(state.pdfTextAnnotations));
+          }
+          if (state.pdfBoxAnnotations) {
+            pdfBoxAnnotations = JSON.parse(JSON.stringify(state.pdfBoxAnnotations));
+          }
+          if (sheetWindow && !sheetWindow.closed) {
+            if (typeof window.renderPdfTextAnnotations === "function") window.renderPdfTextAnnotations(sheetWindow);
+            if (typeof window.renderPdfBoxAnnotations === "function") window.renderPdfBoxAnnotations(sheetWindow);
           }
           renderTimeline();
         }
@@ -994,6 +1016,8 @@
       }
 
       let currentVideoName = "";
+      let currentPdfName = "sheet_music.pdf";
+      let currentPdfHandle = null;
       let pendingImportData = null;
 
       // 載入影片
@@ -1043,12 +1067,18 @@
               const data = JSON.parse(event.target.result);
               customRegions = data.customRegions || [];
               pdfAnchors = data.pdfAnchors || [];
+              pdfTextAnnotations = data.pdfTextAnnotations || [];
+              pdfBoxAnnotations = data.pdfBoxAnnotations || [];
               document
                 .getElementById("sheet-music-btn")
                 .classList.remove("hidden");
               renderRegions();
               if (typeof window.updateSheetWindowUI === "function")
                 window.updateSheetWindowUI();
+              if (sheetWindow && !sheetWindow.closed) {
+                if (typeof window.renderPdfTextAnnotations === "function") window.renderPdfTextAnnotations(sheetWindow);
+                if (typeof window.renderPdfBoxAnnotations === "function") window.renderPdfBoxAnnotations(sheetWindow);
+              }
 
               if (data.videoName) {
                 currentVideoName = data.videoName;
@@ -2227,6 +2257,8 @@
             clips,
             customRegions,
             pdfAnchors,
+            pdfTextAnnotations,
+            pdfBoxAnnotations,
           });
 
           // 檢查瀏覽器是否支援 File System Access API
@@ -2370,6 +2402,8 @@
               const data = JSON.parse(event.target.result);
               customRegions = data.customRegions || [];
               pdfAnchors = data.pdfAnchors || [];
+              pdfTextAnnotations = data.pdfTextAnnotations || [];
+              pdfBoxAnnotations = data.pdfBoxAnnotations || [];
 
               document
                 .getElementById("sheet-music-btn")
@@ -2377,6 +2411,10 @@
               renderRegions();
               if (typeof window.updateSheetWindowUI === "function")
                 window.updateSheetWindowUI();
+              if (sheetWindow && !sheetWindow.closed) {
+                if (typeof window.renderPdfTextAnnotations === "function") window.renderPdfTextAnnotations(sheetWindow);
+                if (typeof window.renderPdfBoxAnnotations === "function") window.renderPdfBoxAnnotations(sheetWindow);
+              }
 
               if (data.videoName) {
                 currentVideoName = data.videoName;
@@ -3517,9 +3555,49 @@
                 pdfDoc.addImage(imgData, "JPEG", 0, 0, w, h);
               }
 
-              // 下載匯出的新 PDF
-              const exportName = (window.currentVideoName ? window.currentVideoName.replace(/\.[^/.]+$/, "") : "sheet_music") + "_annotated.pdf";
-              pdfDoc.save(exportName);
+              // 取得建議檔名 (優先採用 PDF 原檔名，其次使用影片名稱)
+              let baseName = "sheet_music";
+              if (window.currentPdfName) {
+                baseName = window.currentPdfName.replace(/\.[^/.]+$/, "");
+              } else if (window.currentVideoName) {
+                baseName = window.currentVideoName.replace(/\.[^/.]+$/, "");
+              }
+              const defaultExportName = baseName + "_annotated.pdf";
+
+              // 轉為 Blob 準備寫入
+              const pdfBlob = pdfDoc.output("blob");
+
+              // 檢查瀏覽器是否支援 showSaveFilePicker 另存新檔視窗
+              if ("showSaveFilePicker" in win) {
+                try {
+                  const savePickerOptions = {
+                    suggestedName: defaultExportName,
+                    types: [
+                      {
+                        description: "PDF 文件 (*.pdf)",
+                        accept: { "application/pdf": [".pdf"] },
+                      },
+                    ],
+                  };
+                  // 若有原始 PDF handle，嘗試帶入同一路徑
+                  if (window.currentPdfHandle) {
+                    savePickerOptions.startIn = window.currentPdfHandle;
+                  }
+
+                  const handle = await win.showSaveFilePicker(savePickerOptions);
+                  window.currentPdfHandle = handle;
+                  const writable = await handle.createWritable();
+                  await writable.write(pdfBlob);
+                  await writable.close();
+                } catch (err) {
+                  if (err.name !== "AbortError") {
+                    console.warn("showSaveFilePicker 失敗，改用傳統下載:", err);
+                    pdfDoc.save(defaultExportName);
+                  }
+                }
+              } else {
+                pdfDoc.save(defaultExportName);
+              }
             } catch (err) {
               console.error("匯出 PDF 失敗:", err);
               win.alert("匯出 PDF 時發生錯誤，請檢視控制台。");
@@ -3645,9 +3723,9 @@
           }
         }
 
-        // 點擊新增文字或方框
+        // 點擊新增文字
         pdfViewerContainer.addEventListener("click", (e) => {
-          if (!isTextMode && !isBoxMode) return;
+          if (!isTextMode) return;
           if (e.target && (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".anchor-mark") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn"))) {
             return;
           }
@@ -3662,83 +3740,167 @@
           const clientX = e.clientX;
           const clientY = e.clientY;
 
-          // 處理文字模式
-          if (isTextMode) {
-            const xRatio = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
-            const yRatio = Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height));
+          const xRatio = Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width));
+          const yRatio = Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height));
 
-            const newText = {
-              id: Date.now(),
-              pageNum: pageNum,
-              xRatio: xRatio,
-              yRatio: yRatio,
-              text: "",
-              ...currentTextProps,
-            };
+          const newText = {
+            id: Date.now(),
+            pageNum: pageNum,
+            xRatio: xRatio,
+            yRatio: yRatio,
+            text: "",
+            ...currentTextProps,
+          };
 
-            pdfTextAnnotations.push(newText);
-            activeTextId = newText.id;
-            isTextMode = false;
-            updateToolButtonsUI();
+          pdfTextAnnotations.push(newText);
+          activeTextId = newText.id;
+          isTextMode = false;
+          updateToolButtonsUI();
 
-            window.renderPdfTextAnnotations(win);
-            if (textPanel) {
-              textPanel.style.display = "block";
-              syncTextPanelUI(newText);
-            }
-            try { saveState(); } catch (err) {}
+          window.renderPdfTextAnnotations(win);
+          if (textPanel) {
+            textPanel.style.display = "block";
+            syncTextPanelUI(newText);
+          }
+          try { saveState(); } catch (err) {}
 
-            setTimeout(() => {
-              const newEl = win.document.getElementById(`text-item-${newText.id}`);
-              if (newEl) {
-                const inputEl = newEl.querySelector(".sheet-text-content");
-                if (inputEl) {
-                  inputEl.setAttribute("contenteditable", "true");
-                  inputEl.focus();
-                  const range = win.document.createRange();
-                  range.selectNodeContents(inputEl);
-                  const sel = win.getSelection();
-                  sel.removeAllRanges();
-                  sel.addRange(range);
-                }
+          setTimeout(() => {
+            const newEl = win.document.getElementById(`text-item-${newText.id}`);
+            if (newEl) {
+              const inputEl = newEl.querySelector(".sheet-text-content");
+              if (inputEl) {
+                inputEl.setAttribute("contenteditable", "true");
+                inputEl.focus();
+                const range = win.document.createRange();
+                range.selectNodeContents(inputEl);
+                const sel = win.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
               }
-            }, 60);
+            }
+          }, 60);
+        });
+
+        // 方框拉取狀態
+        let isDrawingBox = false;
+        let drawBoxStartClientX = 0, drawBoxStartClientY = 0;
+        let drawBoxTargetPage = null;
+        let drawBoxPreviewEl = null;
+
+        pdfViewerContainer.addEventListener("mousedown", (e) => {
+          if (!isBoxMode) return;
+          if (e.target && (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".anchor-mark") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn"))) {
             return;
           }
+          const targetPage = e.target.closest(".page-container");
+          if (!targetPage) return;
 
-          // 處理方框模式
-          if (isBoxMode) {
-            const defaultWidthRatio = 0.16; // 預設寬度約佔頁面 16%
-            const defaultHeightRatio = 0.08; // 預設高度約佔頁面 8%
+          e.preventDefault();
+          e.stopPropagation();
 
-            const clickXRatio = (clientX - rect.left) / rect.width;
-            const clickYRatio = (clientY - rect.top) / rect.height;
+          isDrawingBox = true;
+          drawBoxTargetPage = targetPage;
+          drawBoxStartClientX = e.clientX;
+          drawBoxStartClientY = e.clientY;
 
-            const xRatio = Math.max(0.01, Math.min(1 - defaultWidthRatio, clickXRatio - defaultWidthRatio / 2));
-            const yRatio = Math.max(0.01, Math.min(1 - defaultHeightRatio, clickYRatio - defaultHeightRatio / 2));
+          const rect = targetPage.getBoundingClientRect();
+          const currentZoom = parseFloat(scaleWrapper.style.zoom) || 1;
+          const startX = (e.clientX - rect.left) / currentZoom;
+          const startY = (e.clientY - rect.top) / currentZoom;
 
-            const newBox = {
-              id: Date.now(),
-              pageNum: pageNum,
-              xRatio: xRatio,
-              yRatio: yRatio,
-              widthRatio: defaultWidthRatio,
-              heightRatio: defaultHeightRatio,
-              ...currentBoxProps,
-            };
+          drawBoxPreviewEl = doc.createElement("div");
+          drawBoxPreviewEl.style.position = "absolute";
+          drawBoxPreviewEl.style.left = startX + "px";
+          drawBoxPreviewEl.style.top = startY + "px";
+          drawBoxPreviewEl.style.width = "0px";
+          drawBoxPreviewEl.style.height = "0px";
+          drawBoxPreviewEl.style.border = `${currentBoxProps.borderWidth}px ${currentBoxProps.borderStyle} ${currentBoxProps.stroke}`;
+          drawBoxPreviewEl.style.backgroundColor = currentBoxProps.bg;
+          drawBoxPreviewEl.style.borderRadius = `${currentBoxProps.borderRadius}px`;
+          drawBoxPreviewEl.style.pointerEvents = "none";
+          drawBoxPreviewEl.style.zIndex = "50";
+          drawBoxPreviewEl.style.boxSizing = "border-box";
+          targetPage.appendChild(drawBoxPreviewEl);
+        });
 
-            pdfBoxAnnotations.push(newBox);
-            activeBoxId = newBox.id;
-            isBoxMode = false;
-            updateToolButtonsUI();
+        win.document.addEventListener("mousemove", (e) => {
+          if (!isDrawingBox || !drawBoxPreviewEl || !drawBoxTargetPage) return;
+          e.preventDefault();
 
-            window.renderPdfBoxAnnotations(win);
-            if (boxPanel) {
-              boxPanel.style.display = "block";
-              syncBoxPanelUI(newBox);
-            }
-            try { saveState(); } catch (err) {}
+          const rect = drawBoxTargetPage.getBoundingClientRect();
+          const currentZoom = parseFloat(scaleWrapper.style.zoom) || 1;
+
+          const left = Math.min(drawBoxStartClientX, e.clientX);
+          const top = Math.min(drawBoxStartClientY, e.clientY);
+          const width = Math.abs(e.clientX - drawBoxStartClientX);
+          const height = Math.abs(e.clientY - drawBoxStartClientY);
+
+          drawBoxPreviewEl.style.left = `${(left - rect.left) / currentZoom}px`;
+          drawBoxPreviewEl.style.top = `${(top - rect.top) / currentZoom}px`;
+          drawBoxPreviewEl.style.width = `${width / currentZoom}px`;
+          drawBoxPreviewEl.style.height = `${height / currentZoom}px`;
+        });
+
+        win.document.addEventListener("mouseup", (e) => {
+          if (!isDrawingBox) return;
+          isDrawingBox = false;
+
+          if (drawBoxPreviewEl) {
+            drawBoxPreviewEl.remove();
+            drawBoxPreviewEl = null;
           }
+
+          if (!drawBoxTargetPage) return;
+
+          const pageNum = parseInt(drawBoxTargetPage.dataset.pageNum) || 1;
+          const rect = drawBoxTargetPage.getBoundingClientRect();
+
+          let left = Math.min(drawBoxStartClientX, e.clientX);
+          let top = Math.min(drawBoxStartClientY, e.clientY);
+          let width = Math.abs(e.clientX - drawBoxStartClientX);
+          let height = Math.abs(e.clientY - drawBoxStartClientY);
+
+          let xRatio, yRatio, widthRatio, heightRatio;
+
+          if (width < 12 && height < 12) {
+            // 若點擊未拖曳，產生預設尺寸方框
+            widthRatio = 0.16;
+            heightRatio = 0.08;
+            xRatio = Math.max(0.01, Math.min(1 - widthRatio, (drawBoxStartClientX - rect.left) / rect.width - widthRatio / 2));
+            yRatio = Math.max(0.01, Math.min(1 - heightRatio, (drawBoxStartClientY - rect.top) / rect.height - heightRatio / 2));
+          } else {
+            xRatio = Math.max(0.005, Math.min(0.99, (left - rect.left) / rect.width));
+            yRatio = Math.max(0.005, Math.min(0.99, (top - rect.top) / rect.height));
+            widthRatio = Math.min(1 - xRatio, width / rect.width);
+            heightRatio = Math.min(1 - yRatio, height / rect.height);
+          }
+
+          const newBox = {
+            id: Date.now(),
+            pageNum: pageNum,
+            xRatio: xRatio,
+            yRatio: yRatio,
+            widthRatio: Math.max(0.02, widthRatio),
+            heightRatio: Math.max(0.015, heightRatio),
+            ...currentBoxProps,
+          };
+
+          pdfBoxAnnotations.push(newBox);
+          activeBoxId = newBox.id;
+          activeTextId = null;
+          isBoxMode = false;
+          updateToolButtonsUI();
+
+          window.renderPdfBoxAnnotations(win);
+          window.renderPdfTextAnnotations(win);
+          if (boxPanel) {
+            boxPanel.style.display = "block";
+            syncBoxPanelUI(newBox);
+          }
+          if (textPanel) textPanel.style.display = "none";
+          try { saveState(); } catch (err) {}
+
+          drawBoxTargetPage = null;
         });
 
         // --- 節拍器功能元件 (高精度 Web Audio 硬體排程引擎) ---
@@ -3857,10 +4019,96 @@
           toggleMetronome();
         });
 
+        // 剪貼簿快取狀態
+        let clipboardItem = null; // { type: 'text'|'box', data: {...} }
+
         // 快捷鍵控制
         win.document.addEventListener("keydown", (e) => {
           const activeEl = win.document.activeElement;
           const isEditingText = activeEl && (activeEl.isContentEditable || activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
+
+          // Command/Ctrl + Z 上一動 (Undo)
+          if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z" && !isEditingText) {
+            e.preventDefault();
+            undo();
+            return;
+          }
+
+          // Command/Ctrl + Y 或 Shift+Command/Ctrl + Z 下一動 (Redo)
+          if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y" || ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "z")) && !isEditingText) {
+            e.preventDefault();
+            redo();
+            return;
+          }
+
+          // Command/Ctrl + S 存檔 (同步觸發主視窗儲存專案)
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+            e.preventDefault();
+            const mainExportBtn = document.getElementById("export-btn");
+            if (mainExportBtn) mainExportBtn.click();
+            return;
+          }
+
+          // Command/Ctrl + C 複製
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c" && !isEditingText) {
+            if (activeTextId) {
+              const src = pdfTextAnnotations.find((t) => t.id === activeTextId);
+              if (src) {
+                clipboardItem = { type: "text", data: JSON.parse(JSON.stringify(src)) };
+                e.preventDefault();
+                return;
+              }
+            }
+            if (activeBoxId) {
+              const src = pdfBoxAnnotations.find((b) => b.id === activeBoxId);
+              if (src) {
+                clipboardItem = { type: "box", data: JSON.parse(JSON.stringify(src)) };
+                e.preventDefault();
+                return;
+              }
+            }
+          }
+
+          // Command/Ctrl + V 貼上
+          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v" && !isEditingText) {
+            if (clipboardItem) {
+              e.preventDefault();
+              if (clipboardItem.type === "text") {
+                const newItem = JSON.parse(JSON.stringify(clipboardItem.data));
+                newItem.id = Date.now();
+                newItem.xRatio = Math.min(0.95, newItem.xRatio + 0.03);
+                newItem.yRatio = Math.min(0.95, newItem.yRatio + 0.03);
+                pdfTextAnnotations.push(newItem);
+                activeTextId = newItem.id;
+                activeBoxId = null;
+                window.renderPdfTextAnnotations(win);
+                window.renderPdfBoxAnnotations(win);
+                if (textPanel) {
+                  textPanel.style.display = "block";
+                  syncTextPanelUI(newItem);
+                }
+                if (boxPanel) boxPanel.style.display = "none";
+                saveState();
+              } else if (clipboardItem.type === "box") {
+                const newItem = JSON.parse(JSON.stringify(clipboardItem.data));
+                newItem.id = Date.now();
+                newItem.xRatio = Math.min(1 - newItem.widthRatio, newItem.xRatio + 0.03);
+                newItem.yRatio = Math.min(1 - newItem.heightRatio, newItem.yRatio + 0.03);
+                pdfBoxAnnotations.push(newItem);
+                activeBoxId = newItem.id;
+                activeTextId = null;
+                window.renderPdfTextAnnotations(win);
+                window.renderPdfBoxAnnotations(win);
+                if (boxPanel) {
+                  boxPanel.style.display = "block";
+                  syncBoxPanelUI(newItem);
+                }
+                if (textPanel) textPanel.style.display = "none";
+                saveState();
+              }
+              return;
+            }
+          }
 
           if (!isEditingText) {
             if (e.key === "Enter") {
@@ -3898,6 +4146,9 @@
             } else if (e.key.toLowerCase() === "t") {
               e.preventDefault();
               if (textToolBtn) textToolBtn.click();
+            } else if (e.key.toLowerCase() === "r") {
+              e.preventDefault();
+              if (boxToolBtn) boxToolBtn.click();
             }
           }
 
@@ -3932,13 +4183,23 @@
           }
           if (activeTextId) {
             const el = doc.getElementById(`text-item-${activeTextId}`);
-            if (el) el.classList.remove("selected");
+            if (el) {
+              el.classList.remove("selected");
+              const rm = el.querySelector(".remove-text-btn");
+              if (rm) rm.style.display = "none";
+            }
             activeTextId = null;
             if (textPanel) textPanel.style.display = "none";
           }
           if (activeBoxId) {
             const el = doc.getElementById(`box-item-${activeBoxId}`);
-            if (el) el.classList.remove("selected");
+            if (el) {
+              el.classList.remove("selected");
+              const rm = el.querySelector(".remove-box-btn");
+              if (rm) rm.style.display = "none";
+              const rz = el.querySelector(".box-resizer");
+              if (rz) rz.style.display = "none";
+            }
             activeBoxId = null;
             if (boxPanel) boxPanel.style.display = "none";
           }
@@ -3983,15 +4244,11 @@
 
           textEl.innerHTML = `
             <div class="sheet-text-content" contenteditable="false" spellcheck="false">${item.text}</div>
-            <div class="remove-text-btn" style="position:absolute; top:-8px; right:-8px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; display:none; align-items:center; justify-content:center; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); z-index:40; border:1.5px solid white;" title="刪除">✕</div>
+            <div class="remove-text-btn" style="position:absolute; top:-8px; right:-8px; background:#ef4444; color:white; border-radius:50%; width:18px; height:18px; display:${activeTextId === item.id ? 'flex' : 'none'}; align-items:center; justify-content:center; font-size:10px; font-weight:bold; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.3); z-index:40; border:1.5px solid white;" title="刪除">✕</div>
           `;
 
           const contentEl = textEl.querySelector(".sheet-text-content");
           const removeBtn = textEl.querySelector(".remove-text-btn");
-
-          if (activeTextId === item.id) {
-            removeBtn.style.display = "flex";
-          }
 
           contentEl.addEventListener("dblclick", (e) => {
             e.stopPropagation();
@@ -4028,8 +4285,22 @@
 
             activeTextId = item.id;
             activeBoxId = null; // 取消方框選取
-            win.document.querySelectorAll(".sheet-text-item").forEach((el) => el.classList.remove("selected"));
-            win.document.querySelectorAll(".sheet-box-item").forEach((el) => el.classList.remove("selected"));
+
+            // 清理其他所有文字的選取狀態與紅色刪除鈕
+            win.document.querySelectorAll(".sheet-text-item").forEach((el) => {
+              el.classList.remove("selected");
+              const rm = el.querySelector(".remove-text-btn");
+              if (rm) rm.style.display = "none";
+            });
+            // 清理方框選取狀態與控制元件
+            win.document.querySelectorAll(".sheet-box-item").forEach((el) => {
+              el.classList.remove("selected");
+              const rm = el.querySelector(".remove-box-btn");
+              if (rm) rm.style.display = "none";
+              const rz = el.querySelector(".box-resizer");
+              if (rz) rz.style.display = "none";
+            });
+
             textEl.classList.add("selected");
             removeBtn.style.display = "flex";
 
@@ -4053,18 +4324,43 @@
           let isDragging = false;
           let dragStartX = 0, dragStartY = 0;
           let moved = false;
+          let targetItem = item;
+          let currentDragEl = textEl;
 
           const onStartDrag = (e) => {
             if (e.target.isContentEditable || e.target.classList.contains("remove-text-btn")) return;
-            isDragging = true;
-            moved = false;
             dragStartX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
             dragStartY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
-            textEl.style.cursor = "grabbing";
+
+            // 按住 Command/Ctrl 拖曳：複製新物件
+            if (e.metaKey || e.ctrlKey) {
+              e.preventDefault();
+              const cloned = JSON.parse(JSON.stringify(item));
+              cloned.id = Date.now();
+              pdfTextAnnotations.push(cloned);
+              activeTextId = cloned.id;
+              window.renderPdfTextAnnotations(win);
+
+              const newEl = win.document.getElementById(`text-item-${cloned.id}`);
+              if (newEl) {
+                targetItem = cloned;
+                currentDragEl = newEl;
+                isDragging = true;
+                moved = true;
+                currentDragEl.style.cursor = "grabbing";
+              }
+              return;
+            }
+
+            isDragging = true;
+            moved = false;
+            targetItem = item;
+            currentDragEl = textEl;
+            currentDragEl.style.cursor = "grabbing";
           };
 
           const onDoDrag = (e) => {
-            if (!isDragging) return;
+            if (!isDragging || !currentDragEl) return;
             const clientX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
             const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
 
@@ -4081,20 +4377,20 @@
               nx = Math.max(0, Math.min(1, nx));
               ny = Math.max(0, Math.min(1, ny));
 
-              textEl.style.left = nx * 100 + "%";
-              textEl.style.top = ny * 100 + "%";
-              textEl.dataset.newX = nx;
-              textEl.dataset.newY = ny;
+              currentDragEl.style.left = nx * 100 + "%";
+              currentDragEl.style.top = ny * 100 + "%";
+              currentDragEl.dataset.newX = nx;
+              currentDragEl.dataset.newY = ny;
             }
           };
 
           const onStopDrag = () => {
-            if (isDragging) {
+            if (isDragging && currentDragEl) {
               isDragging = false;
-              textEl.style.cursor = "grab";
-              if (moved && textEl.dataset.newX !== undefined) {
-                item.xRatio = parseFloat(textEl.dataset.newX);
-                item.yRatio = parseFloat(textEl.dataset.newY);
+              currentDragEl.style.cursor = "grab";
+              if (moved && currentDragEl.dataset.newX !== undefined) {
+                targetItem.xRatio = parseFloat(currentDragEl.dataset.newX);
+                targetItem.yRatio = parseFloat(currentDragEl.dataset.newY);
                 saveState();
               }
             }
@@ -4161,8 +4457,22 @@
 
             activeBoxId = item.id;
             activeTextId = null; // 取消文字選取
-            win.document.querySelectorAll(".sheet-box-item").forEach((el) => el.classList.remove("selected"));
-            win.document.querySelectorAll(".sheet-text-item").forEach((el) => el.classList.remove("selected"));
+
+            // 清理其他所有方框的選取狀態、刪除鈕與縮放點
+            win.document.querySelectorAll(".sheet-box-item").forEach((el) => {
+              el.classList.remove("selected");
+              const rm = el.querySelector(".remove-box-btn");
+              if (rm) rm.style.display = "none";
+              const rz = el.querySelector(".box-resizer");
+              if (rz) rz.style.display = "none";
+            });
+            // 清理文字選取狀態與刪除鈕
+            win.document.querySelectorAll(".sheet-text-item").forEach((el) => {
+              el.classList.remove("selected");
+              const rm = el.querySelector(".remove-text-btn");
+              if (rm) rm.style.display = "none";
+            });
+
             boxEl.classList.add("selected");
             removeBtn.style.display = "flex";
             resizerBtn.style.display = "block";
@@ -4185,18 +4495,43 @@
           let isDragging = false;
           let dragStartX = 0, dragStartY = 0;
           let moved = false;
+          let targetItem = item;
+          let currentDragEl = boxEl;
 
           const onStartDrag = (e) => {
             if (e.target.classList.contains("remove-box-btn") || e.target.classList.contains("box-resizer")) return;
-            isDragging = true;
-            moved = false;
             dragStartX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
             dragStartY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
-            boxEl.style.cursor = "grabbing";
+
+            // 按住 Command/Ctrl 拖曳：複製新方框
+            if (e.metaKey || e.ctrlKey) {
+              e.preventDefault();
+              const cloned = JSON.parse(JSON.stringify(item));
+              cloned.id = Date.now();
+              pdfBoxAnnotations.push(cloned);
+              activeBoxId = cloned.id;
+              window.renderPdfBoxAnnotations(win);
+
+              const newEl = win.document.getElementById(`box-item-${cloned.id}`);
+              if (newEl) {
+                targetItem = cloned;
+                currentDragEl = newEl;
+                isDragging = true;
+                moved = true;
+                currentDragEl.style.cursor = "grabbing";
+              }
+              return;
+            }
+
+            isDragging = true;
+            moved = false;
+            targetItem = item;
+            currentDragEl = boxEl;
+            currentDragEl.style.cursor = "grabbing";
           };
 
           const onDoDrag = (e) => {
-            if (!isDragging) return;
+            if (!isDragging || !currentDragEl) return;
             const clientX = e.type.includes("touch") ? e.touches[0].clientX : e.clientX;
             const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
 
@@ -4207,26 +4542,26 @@
             if (moved) {
               e.preventDefault();
               const rect = pageData.container.getBoundingClientRect();
-              let nx = (clientX - dragStartX) / rect.width + item.xRatio;
-              let ny = (clientY - dragStartY) / rect.height + item.yRatio;
+              let nx = (clientX - dragStartX) / rect.width + targetItem.xRatio;
+              let ny = (clientY - dragStartY) / rect.height + targetItem.yRatio;
 
-              nx = Math.max(0, Math.min(1 - item.widthRatio, nx));
-              ny = Math.max(0, Math.min(1 - item.heightRatio, ny));
+              nx = Math.max(0, Math.min(1 - targetItem.widthRatio, nx));
+              ny = Math.max(0, Math.min(1 - targetItem.heightRatio, ny));
 
-              boxEl.style.left = nx * 100 + "%";
-              boxEl.style.top = ny * 100 + "%";
-              boxEl.dataset.newX = nx;
-              boxEl.dataset.newY = ny;
+              currentDragEl.style.left = nx * 100 + "%";
+              currentDragEl.style.top = ny * 100 + "%";
+              currentDragEl.dataset.newX = nx;
+              currentDragEl.dataset.newY = ny;
             }
           };
 
           const onStopDrag = () => {
-            if (isDragging) {
+            if (isDragging && currentDragEl) {
               isDragging = false;
-              boxEl.style.cursor = "grab";
-              if (moved && boxEl.dataset.newX !== undefined) {
-                item.xRatio = parseFloat(boxEl.dataset.newX);
-                item.yRatio = parseFloat(boxEl.dataset.newY);
+              currentDragEl.style.cursor = "grab";
+              if (moved && currentDragEl.dataset.newX !== undefined) {
+                targetItem.xRatio = parseFloat(currentDragEl.dataset.newX);
+                targetItem.yRatio = parseFloat(currentDragEl.dataset.newY);
                 saveState();
               }
             }

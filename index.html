@@ -3903,27 +3903,53 @@
           drawBoxTargetPage = null;
         });
 
-        // --- 節拍器功能元件 (高精度 Web Audio 硬體排程引擎) ---
+        // --- 節拍器功能元件 (獨立 Web Worker + Web Audio 絕對排程引擎) ---
         let bpm = 120;
         let isMetronomeRunning = false;
         let audioCtx = null;
         let nextNoteTime = 0.0;
-        let timerWorkerId = null;
-        const lookahead = 25.0; // 每 25ms 檢查排程
-        const scheduleAheadTime = 0.15; // 提前將未來 0.15 秒的音符推入硬體時間軸
+        const scheduleAheadTime = 0.25; // 提前 0.25 秒將音符推入硬體時間軸，徹底避免卡頓
 
-        // 建立左側節拍器浮動容器
+        // 建立獨立背景 Timer Worker，確保不受主執行緒或分頁卡頓影響
+        const workerBlob = new Blob([`
+          let timer = null;
+          self.onmessage = function(e) {
+            if (e.data === "start") {
+              if (!timer) {
+                timer = setInterval(function() { postMessage("tick"); }, 25);
+              }
+            } else if (e.data === "stop") {
+              if (timer) {
+                clearInterval(timer);
+                timer = null;
+              }
+            }
+          };
+        `], { type: "application/javascript" });
+        const timerWorker = new Worker(URL.createObjectURL(workerBlob));
+
+        // 建立左側節拍器浮動容器 (支援上下拖曳與展開/收合，採用絕對像素避免位移)
         const metroContainer = doc.createElement("div");
         metroContainer.id = "sheet-metronome-container";
-        metroContainer.style.cssText = "position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:90; display:flex; flex-direction:column; align-items:center; background:rgba(31,41,55,0.85); backdrop-filter:blur(8px); padding:14px 10px; border-radius:30px; border:1px solid #4b5563; box-shadow:0 8px 20px rgba(0,0,0,0.5); user-select:none;";
+        metroContainer.style.cssText = "position:absolute; left:16px; top:80px; z-index:90; display:flex; flex-direction:column; align-items:center; background:rgba(31,41,55,0.85); backdrop-filter:blur(8px); padding:8px 6px; border-radius:24px; border:1px solid #4b5563; box-shadow:0 8px 20px rgba(0,0,0,0.5); user-select:none; touch-action:none;";
 
         metroContainer.innerHTML = `
-          <div id="bpm-val" style="font-family:monospace; font-size:15px; font-weight:bold; color:#60a5fa; margin-bottom:10px;">120</div>
-          <div style="height:170px; display:flex; align-items:center; justify-content:center; padding:6px 0;">
-            <input type="range" id="bpm-slider" min="30" max="244" step="1" value="120" style="writing-mode:vertical-lr; direction:rtl; width:8px; height:150px; cursor:pointer; accent-color:#3b82f6;" />
+          <!-- 頂部上下拖曳把柄 -->
+          <div id="metro-drag-handle" style="width:100%; height:20px; display:flex; align-items:center; justify-content:center; cursor:ns-resize; padding:2px 0; margin-bottom:2px;" title="按住可上下移動位置 (僅限左側)">
+            <div style="width:16px; height:4px; background:#9ca3af; border-radius:9999px; opacity:0.8; pointer-events:none;"></div>
           </div>
-          <button id="metro-play-btn" style="margin-top:12px; width:44px; height:44px; border-radius:50%; border:none; background:#374151; color:#9ca3af; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:0 2px 6px rgba(0,0,0,0.3);" title="節拍器 (Enter 開始/暫停，左右鍵 ±5 BPM)">
-            <svg id="drum-icon" style="width:24px; height:24px;" viewBox="0 0 24 24" fill="currentColor">
+          <!-- 收合 / 展開按鈕 -->
+          <button id="metro-toggle-btn" style="background:none; border:none; color:#9ca3af; cursor:pointer; padding:4px; font-size:12px; line-height:1; margin-bottom:4px; transition:color 0.2s;" title="收合/展開節拍器">▲</button>
+          <!-- 節拍器主體控制區 -->
+          <div id="metro-body" style="display:flex; flex-direction:column; align-items:center;">
+            <div id="bpm-val" style="font-family:monospace; font-size:15px; font-weight:bold; color:#60a5fa; margin-bottom:8px;">120</div>
+            <div style="height:170px; display:flex; align-items:center; justify-content:center; padding:4px 0;">
+              <input type="range" id="bpm-slider" min="30" max="244" step="1" value="120" style="writing-mode:vertical-lr; direction:rtl; width:8px; height:150px; cursor:pointer; accent-color:#3b82f6;" />
+            </div>
+          </div>
+          <!-- 底部播放鍵 -->
+          <button id="metro-play-btn" style="margin-top:8px; width:40px; height:40px; border-radius:50%; border:none; background:#374151; color:#9ca3af; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; box-shadow:0 2px 6px rgba(0,0,0,0.3);" title="節拍器 (Enter 開始/暫停，左右鍵 ±5 BPM)">
+            <svg id="drum-icon" style="width:22px; height:22px;" viewBox="0 0 24 24" fill="currentColor">
               <ellipse cx="12" cy="7" rx="9" ry="3" fill="none" stroke="currentColor" stroke-width="2"/>
               <path d="M3 7v10c0 1.66 4.03 3 9 3s9-1.34 9-3V7" fill="none" stroke="currentColor" stroke-width="2"/>
               <path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3" fill="none" stroke="currentColor" stroke-width="2"/>
@@ -3936,9 +3962,77 @@
         const bpmSlider = doc.getElementById("bpm-slider");
         const bpmVal = doc.getElementById("bpm-val");
         const metroPlayBtn = doc.getElementById("metro-play-btn");
+        const metroToggleBtn = doc.getElementById("metro-toggle-btn");
+        const metroBody = doc.getElementById("metro-body");
+        const metroDragHandle = doc.getElementById("metro-drag-handle");
+
+        // 收合/展開功能切換 (徹底隔離拖曳事件)
+        let isMetroCollapsed = false;
+        const toggleCollapse = (e) => {
+          e.stopPropagation();
+          isMetroCollapsed = !isMetroCollapsed;
+          if (isMetroCollapsed) {
+            metroBody.style.display = "none";
+            metroToggleBtn.textContent = "▼";
+            metroToggleBtn.title = "展開節拍器";
+          } else {
+            metroBody.style.display = "flex";
+            metroToggleBtn.textContent = "▲";
+            metroToggleBtn.title = "收合節拍器";
+          }
+        };
+
+        metroToggleBtn.addEventListener("click", toggleCollapse);
+        metroToggleBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+        metroToggleBtn.addEventListener("touchstart", (e) => e.stopPropagation());
+
+        // 僅限上下方向拖曳 (水平鎖定左側 16px，使用相對於父容器的 offsetTop)
+        let isMetroDragging = false;
+        let dragStartY = 0;
+        let initialTop = 0;
+
+        const onMetroDragStart = (e) => {
+          isMetroDragging = true;
+          const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+          dragStartY = clientY;
+          initialTop = metroContainer.offsetTop;
+          metroContainer.style.left = "16px";
+          doc.body.style.userSelect = "none";
+        };
+
+        const onMetroDragMove = (e) => {
+          if (!isMetroDragging) return;
+          e.preventDefault();
+          const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
+          const deltaY = clientY - dragStartY;
+          const parentEl = metroContainer.parentElement;
+          const parentHeight = parentEl ? parentEl.clientHeight : 800;
+          const containerHeight = metroContainer.offsetHeight;
+          const minY = 10;
+          const maxY = Math.max(minY, parentHeight - containerHeight - 10);
+          const nextTop = Math.max(minY, Math.min(maxY, initialTop + deltaY));
+          metroContainer.style.top = `${nextTop}px`;
+          metroContainer.style.left = "16px";
+        };
+
+        const onMetroDragEnd = () => {
+          if (isMetroDragging) {
+            isMetroDragging = false;
+            doc.body.style.userSelect = "";
+          }
+        };
+
+        metroDragHandle.addEventListener("mousedown", onMetroDragStart);
+        metroDragHandle.addEventListener("touchstart", onMetroDragStart, { passive: true });
+        doc.addEventListener("mousemove", onMetroDragMove);
+        doc.addEventListener("touchmove", onMetroDragMove, { passive: false });
+        doc.addEventListener("mouseup", onMetroDragEnd);
+        doc.addEventListener("touchend", onMetroDragEnd);
 
         // 精確在硬體時間 t 觸發鼓聲
         function scheduleDrumSound(time) {
+          if (!audioCtx) return;
+
           // 低音 Kick
           const osc = audioCtx.createOscillator();
           const gain = audioCtx.createGain();
@@ -3953,7 +4047,7 @@
           osc.stop(time + 0.08);
 
           // 擊打高頻噪音
-          const bSize = audioCtx.sampleRate * 0.04;
+          const bSize = Math.floor(audioCtx.sampleRate * 0.04);
           const b = audioCtx.createBuffer(1, bSize, audioCtx.sampleRate);
           const data = b.getChannelData(0);
           for (let i = 0; i < bSize; i++) data[i] = Math.random() * 2 - 1;
@@ -3971,16 +4065,24 @@
           noise.start(time);
         }
 
-        // 調度循環：確保時間軸不斷提前排程
+        // 輪詢排程器：由 Worker 觸發，保證排程間隔絕對等長
         function scheduler() {
+          if (!audioCtx) return;
+          // 若累積延遲超過目前時間，將排程點校正至現在，避免快速狂補音符
+          if (nextNoteTime < audioCtx.currentTime) {
+            nextNoteTime = audioCtx.currentTime;
+          }
           while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
             scheduleDrumSound(nextNoteTime);
             nextNoteTime += 60.0 / bpm;
           }
-          if (isMetronomeRunning) {
-            timerWorkerId = setTimeout(scheduler, lookahead);
-          }
         }
+
+        timerWorker.onmessage = function(e) {
+          if (e.data === "tick" && isMetronomeRunning) {
+            scheduler();
+          }
+        };
 
         function setBpm(newBpm) {
           bpm = Math.max(30, Math.min(244, Math.round(newBpm)));
@@ -3990,12 +4092,12 @@
 
         bpmSlider.addEventListener("input", (e) => setBpm(e.target.value));
 
-        function toggleMetronome() {
+        async function toggleMetronome() {
           if (!audioCtx) {
             audioCtx = new (win.AudioContext || win.webkitAudioContext)();
           }
           if (audioCtx.state === "suspended") {
-            audioCtx.resume();
+            await audioCtx.resume();
           }
 
           isMetronomeRunning = !isMetronomeRunning;
@@ -4003,20 +4105,24 @@
             metroPlayBtn.style.background = "#2563eb";
             metroPlayBtn.style.color = "#ffffff";
             metroPlayBtn.style.transform = "scale(1.1)";
-            nextNoteTime = audioCtx.currentTime + 0.05; // 稍微預留啟動時間
+            nextNoteTime = audioCtx.currentTime + 0.05;
+            timerWorker.postMessage("start");
             scheduler();
           } else {
             metroPlayBtn.style.background = "#374151";
             metroPlayBtn.style.color = "#9ca3af";
             metroPlayBtn.style.transform = "scale(1.0)";
-            clearTimeout(timerWorkerId);
-            timerWorkerId = null;
+            timerWorker.postMessage("stop");
           }
         }
 
         metroPlayBtn.addEventListener("click", (e) => {
           e.stopPropagation();
           toggleMetronome();
+        });
+
+        win.addEventListener("beforeunload", () => {
+          timerWorker.terminate();
         });
 
         // 剪貼簿快取狀態

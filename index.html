@@ -827,6 +827,9 @@
       let savedPlayTime = 0;
       let isHoveringTimeline = false;
 
+      let pdfLineAnnotations = []; // 儲存線條註解項目
+      let activeLineId = null; // 目前選取的線條項目 id
+
       function saveState() {
         if (historyIndex < history.length - 1) {
           history = history.slice(0, historyIndex + 1);
@@ -839,6 +842,7 @@
               : [],
           pdfTextAnnotations: JSON.parse(JSON.stringify(pdfTextAnnotations || [])),
           pdfBoxAnnotations: JSON.parse(JSON.stringify(pdfBoxAnnotations || [])),
+          pdfLineAnnotations: JSON.parse(JSON.stringify(pdfLineAnnotations || [])),
         });
         historyIndex++;
       }
@@ -858,9 +862,13 @@
           if (state.pdfBoxAnnotations) {
             pdfBoxAnnotations = JSON.parse(JSON.stringify(state.pdfBoxAnnotations));
           }
+          if (state.pdfLineAnnotations) {
+            pdfLineAnnotations = JSON.parse(JSON.stringify(state.pdfLineAnnotations));
+          }
           if (sheetWindow && !sheetWindow.closed) {
             if (typeof window.renderPdfTextAnnotations === "function") window.renderPdfTextAnnotations(sheetWindow);
             if (typeof window.renderPdfBoxAnnotations === "function") window.renderPdfBoxAnnotations(sheetWindow);
+            if (typeof window.renderPdfLineAnnotations === "function") window.renderPdfLineAnnotations(sheetWindow);
           }
           renderTimeline();
         }
@@ -881,9 +889,13 @@
           if (state.pdfBoxAnnotations) {
             pdfBoxAnnotations = JSON.parse(JSON.stringify(state.pdfBoxAnnotations));
           }
+          if (state.pdfLineAnnotations) {
+            pdfLineAnnotations = JSON.parse(JSON.stringify(state.pdfLineAnnotations));
+          }
           if (sheetWindow && !sheetWindow.closed) {
             if (typeof window.renderPdfTextAnnotations === "function") window.renderPdfTextAnnotations(sheetWindow);
             if (typeof window.renderPdfBoxAnnotations === "function") window.renderPdfBoxAnnotations(sheetWindow);
+            if (typeof window.renderPdfLineAnnotations === "function") window.renderPdfLineAnnotations(sheetWindow);
           }
           renderTimeline();
         }
@@ -2680,9 +2692,9 @@
                     .anchor-label { background-color:#9333ea; border:4px solid #facc15; color:white; font-size:36px; padding:8px 24px; border-radius:9999px; white-space:nowrap; box-shadow:0 8px 12px rgba(0,0,0,0.3); font-weight: bold; }
 
                     /* 文字註解標籤樣式 */
-                    .sheet-text-item { position: absolute; transform: translate(-50%, -50%); cursor: grab; pointer-events: auto; user-select: none; z-index: 30; border-radius: 6px; box-sizing: border-box; }
-                    .sheet-text-item.selected { outline: 2px dashed #3b82f6; outline-offset: 4px; }
-                    .sheet-text-content { outline: none; min-width: 20px; min-height: 20px; padding: 4px 8px; white-space: pre-wrap; word-break: break-word; line-height: 1.3; }
+                    .sheet-text-item { position: absolute; transform: translate(-50%, -50%); cursor: grab; pointer-events: auto; user-select: none; z-index: 30; border-radius: 2px; box-sizing: border-box; }
+                    .sheet-text-item.selected { outline: 2px dashed #3b82f6; outline-offset: 1px; }
+                    .sheet-text-content { outline: none; min-width: 8px; min-height: 12px; padding: 0px 1px; white-space: pre-wrap; word-break: break-word; line-height: 1.0; }
 
                     /* 方框標籤樣式 */
                     .sheet-box-item { position: absolute; cursor: grab; pointer-events: auto; user-select: none; z-index: 25; box-sizing: border-box; }
@@ -2750,6 +2762,9 @@
                         </button>
                         <button class="btn" id="box-tool-btn" style="background:#4b5563; font-weight:bold; display:flex; align-items:center; gap:6px; font-size:15px; padding:6px 14px;" title="方框工具 (點擊PDF任意處新增方框)">
                             <span style="font-size:16px;">□</span> 方框
+                        </button>
+                        <button class="btn" id="line-tool-btn" style="background:#4b5563; font-weight:bold; display:flex; align-items:center; gap:6px; font-size:15px; padding:6px 14px;" title="線條工具 (快速鍵 L)">
+                            <span style="font-size:16px; font-weight:bold;">―</span> 線條
                         </button>
                         <div style="display:flex; align-items:center; gap:8px; background:#374151; padding:4px 12px; border-radius:4px;">
                             <button class="btn" id="anchor-size-up" style="padding:2px 10px; font-size:16px; background:#4b5563; font-weight:bold; border-radius: 4px;" title="放大標籤">↑</button>
@@ -2862,7 +2877,7 @@
                         </div>
                     </div>
 
-                    <!-- 方框編輯面板 (符合附圖設計) -->
+                    <!-- 方框編輯面板 -->
                     <div id="box-editor-panel" class="floating-panel">
                         <div class="panel-header" id="box-panel-header">
                             <div class="panel-header-bar"></div>
@@ -2870,7 +2885,8 @@
                         </div>
                         <div class="panel-section">
                             <div class="panel-title">邊框顏色 (Stroke)</div>
-                            <div class="color-grid" id="box-stroke-grid">
+                            <div class="color-grid" style="grid-template-columns: repeat(5, 1fr);" id="box-stroke-grid">
+                                <div class="color-btn checker-bg" data-stroke="transparent" title="無外框" style="overflow:hidden;"><div style="width:140%; height:2px; background:#ef4444; transform:rotate(-45deg);"></div></div>
                                 <div class="color-btn" data-stroke="#1e293b" style="background:#1e293b;" title="黑色"></div>
                                 <div class="color-btn active" data-stroke="#dc2626" style="background:#dc2626;" title="紅色"></div>
                                 <div class="color-btn" data-stroke="#16a34a" style="background:#16a34a;" title="綠色"></div>
@@ -2883,8 +2899,9 @@
                         </div>
                         <div class="panel-section">
                             <div class="panel-title">背景顏色 (Background)</div>
-                            <div class="color-grid" style="grid-template-columns: repeat(5, 1fr);" id="box-bg-grid">
+                            <div class="color-grid" style="grid-template-columns: repeat(6, 1fr);" id="box-bg-grid">
                                 <div class="color-btn checker-bg active" data-bg="transparent" title="透明"></div>
+                                <div class="color-btn" data-bg="#ffffff" style="background:#ffffff; border:1px solid #cbd5e1;" title="白色"></div>
                                 <div class="color-btn" data-bg="#fecaca" style="background:#fecaca;" title="粉紅"></div>
                                 <div class="color-btn" data-bg="#bbf7d0" style="background:#bbf7d0;" title="淺綠"></div>
                                 <div class="color-btn" data-bg="#bfdbfe" style="background:#bfdbfe;" title="淺藍"></div>
@@ -2902,6 +2919,7 @@
                         <div class="panel-section">
                             <div class="panel-title">線條樣式 (Style)</div>
                             <div class="segmented-control" id="box-style-control">
+                                <div class="segment-item" data-style="none" title="無外框"><div style="font-size:11px; color:#94a3b8;">無</div></div>
                                 <div class="segment-item active" data-style="solid"><div style="width:26px; border-top:2px solid #1e293b;"></div></div>
                                 <div class="segment-item" data-style="dashed"><div style="width:26px; border-top:2px dashed #1e293b;"></div></div>
                                 <div class="segment-item" data-style="dotted"><div style="width:26px; border-top:2px dotted #1e293b;"></div></div>
@@ -2916,6 +2934,43 @@
                                 <div class="segment-item active" data-radius="12" title="圓角">
                                     <svg style="width:22px; height:22px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 19V11a4 4 0 0 1 4-4h8"/></svg>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 線條編輯面板 -->
+                    <div id="line-editor-panel" class="floating-panel">
+                        <div class="panel-header" id="line-panel-header">
+                            <div class="panel-header-bar"></div>
+                            <button id="close-line-panel" style="background:none; border:none; color:#64748b; font-size:16px; cursor:pointer; font-weight:bold; line-height:1;">⌃</button>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">邊框顏色 (Stroke)</div>
+                            <div class="color-grid" id="line-stroke-grid">
+                                <div class="color-btn active" data-stroke="#1e293b" style="background:#1e293b;" title="黑色"></div>
+                                <div class="color-btn" data-stroke="#dc2626" style="background:#dc2626;" title="紅色"></div>
+                                <div class="color-btn" data-stroke="#16a34a" style="background:#16a34a;" title="綠色"></div>
+                                <div class="color-btn" data-stroke="#2563eb" style="background:#2563eb;" title="藍色"></div>
+                                <div class="color-btn" data-stroke="#ea580c" style="background:#ea580c;" title="橘色"></div>
+                                <div class="color-btn" data-stroke="#facc15" style="background:#facc15;" title="黃色"></div>
+                                <div class="color-btn" data-stroke="#3e2723" style="background:#3e2723;" title="深褐"></div>
+                                <div class="color-btn" data-stroke="#8d6e63" style="background:#8d6e63;" title="淺褐"></div>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-title">線條粗細 (Width)</div>
+                            <div class="segmented-control" id="line-width-control">
+                                <div class="segment-item active" data-width="2"><div style="width:24px; height:2px; background:#1e293b; border-radius:1px;"></div></div>
+                                <div class="segment-item" data-width="4"><div style="width:24px; height:4px; background:#1e293b; border-radius:2px;"></div></div>
+                                <div class="segment-item" data-width="8"><div style="width:24px; height:6px; background:#1e293b; border-radius:3px;"></div></div>
+                            </div>
+                        </div>
+                        <div class="panel-section" style="padding-bottom:14px;">
+                            <div class="panel-title">線條樣式 (Style)</div>
+                            <div class="segmented-control" id="line-style-control">
+                                <div class="segment-item active" data-style="solid"><div style="width:26px; border-top:2px solid #1e293b;"></div></div>
+                                <div class="segment-item" data-style="dashed"><div style="width:26px; border-top:2px dashed #1e293b;"></div></div>
+                                <div class="segment-item" data-style="dotted"><div style="width:26px; border-top:2px dotted #1e293b;"></div></div>
                             </div>
                         </div>
                     </div>
@@ -3004,17 +3059,34 @@
         const boxPanel = doc.getElementById("box-editor-panel");
 
         let currentBoxProps = {
-          stroke: "#dc2626", // 預設紅框
-          bg: "transparent", // 預設透明底
-          borderWidth: 4,    // 預設粗線
+          stroke: "transparent", // 預設無線條/無邊框
+          bg: "#ffffff",         // 預設白底
+          borderWidth: 4,        // 預設粗線
           borderStyle: "solid",
-          borderRadius: 12,  // 預設圓角
+          borderRadius: 0,       // 預設直角/銳角
         };
 
         if (boxPanel) {
           boxPanel.style.maxHeight = "calc(100vh - 80px)";
           boxPanel.style.overflowY = "auto";
           boxPanel.style.overscrollBehavior = "contain";
+        }
+
+        // --- 線條功能狀態 ---
+        let isLineMode = false;
+        const lineToolBtn = doc.getElementById("line-tool-btn");
+        const linePanel = doc.getElementById("line-editor-panel");
+
+        let currentLineProps = {
+          stroke: "#1e293b", // 預設黑線
+          borderWidth: 2,
+          borderStyle: "solid",
+        };
+
+        if (linePanel) {
+          linePanel.style.maxHeight = "calc(100vh - 80px)";
+          linePanel.style.overflowY = "auto";
+          linePanel.style.overscrollBehavior = "contain";
         }
 
         // 面板通用拖曳綁定函數
@@ -3060,6 +3132,7 @@
 
         makePanelDraggable(textPanel, doc.querySelector(".panel-header"));
         makePanelDraggable(boxPanel, doc.getElementById("box-panel-header"));
+        makePanelDraggable(linePanel, doc.getElementById("line-panel-header"));
 
         // 切換工具按鈕外觀
         function updateToolButtonsUI() {
@@ -3081,8 +3154,17 @@
               boxToolBtn.style.setProperty("color", "white", "important");
             }
           }
+          if (lineToolBtn) {
+            if (isLineMode) {
+              lineToolBtn.style.setProperty("background", "#2563eb", "important");
+              lineToolBtn.style.setProperty("color", "#ffffff", "important");
+            } else {
+              lineToolBtn.style.setProperty("background", "#4b5563", "important");
+              lineToolBtn.style.setProperty("color", "white", "important");
+            }
+          }
           if (pdfViewerContainer) {
-            pdfViewerContainer.style.cursor = (isTextMode || isBoxMode) ? "crosshair" : "default";
+            pdfViewerContainer.style.cursor = (isTextMode || isBoxMode || isLineMode) ? "crosshair" : "default";
           }
         }
 
@@ -3091,11 +3173,12 @@
             e.preventDefault();
             e.stopPropagation();
             isTextMode = !isTextMode;
-            if (isTextMode) isBoxMode = false;
+            if (isTextMode) { isBoxMode = false; isLineMode = false; }
             updateToolButtonsUI();
             if (isTextMode && textPanel) {
               textPanel.style.display = "block";
               if (boxPanel) boxPanel.style.display = "none";
+              if (linePanel) linePanel.style.display = "none";
               syncTextPanelUI(currentTextProps);
             }
           };
@@ -3106,15 +3189,74 @@
             e.preventDefault();
             e.stopPropagation();
             isBoxMode = !isBoxMode;
-            if (isBoxMode) isTextMode = false;
+            if (isBoxMode) { isTextMode = false; isLineMode = false; }
             updateToolButtonsUI();
             if (isBoxMode && boxPanel) {
               boxPanel.style.display = "block";
               if (textPanel) textPanel.style.display = "none";
+              if (linePanel) linePanel.style.display = "none";
               syncBoxPanelUI(currentBoxProps);
             }
           };
         }
+
+        if (lineToolBtn) {
+          lineToolBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            isLineMode = !isLineMode;
+            if (isLineMode) { isTextMode = false; isBoxMode = false; }
+            updateToolButtonsUI();
+            if (isLineMode && linePanel) {
+              linePanel.style.display = "block";
+              if (textPanel) textPanel.style.display = "none";
+              if (boxPanel) boxPanel.style.display = "none";
+              syncLinePanelUI(currentLineProps);
+            }
+          };
+        }
+
+        const closeLinePanelBtn = doc.getElementById("close-line-panel");
+        if (closeLinePanelBtn) {
+          closeLinePanelBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (linePanel) linePanel.style.display = "none";
+            if (activeLineId) {
+              activeLineId = null;
+              window.renderPdfLineAnnotations(win);
+            }
+          };
+        }
+
+        // --- 線條面板樣式同步與更新 ---
+        function updateActiveLineProps(mutator) {
+          mutator(currentLineProps);
+          if (activeLineId) {
+            const item = pdfLineAnnotations.find((l) => l.id === activeLineId);
+            if (item) {
+              mutator(item);
+              window.renderPdfLineAnnotations(win);
+              try { saveState(); } catch (err) {}
+            }
+          }
+          syncLinePanelUI(currentLineProps);
+        }
+
+        function syncLinePanelUI(item) {
+          doc.querySelectorAll("#line-stroke-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.stroke === item.stroke));
+          doc.querySelectorAll("#line-width-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth));
+          doc.querySelectorAll("#line-style-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.style === item.borderStyle));
+        }
+
+        doc.querySelectorAll("#line-stroke-grid .color-btn").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveLineProps((item) => (item.stroke = btn.dataset.stroke)); };
+        });
+        doc.querySelectorAll("#line-width-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveLineProps((item) => (item.borderWidth = parseInt(btn.dataset.width))); };
+        });
+        doc.querySelectorAll("#line-style-control .segment-item").forEach((btn) => {
+          btn.onclick = (e) => { e.stopPropagation(); updateActiveLineProps((item) => (item.borderStyle = btn.dataset.style)); };
+        });
 
         const closeTextPanelBtn = doc.getElementById("close-text-panel");
         if (closeTextPanelBtn) {
@@ -3423,8 +3565,8 @@
                     ctx.fill();
                   }
 
-                  if (box.borderStyle && box.borderStyle !== "none") {
-                    ctx.strokeStyle = box.stroke || "#dc2626";
+                  if (box.borderStyle && box.borderStyle !== "none" && box.stroke && box.stroke !== "transparent") {
+                    ctx.strokeStyle = box.stroke;
                     ctx.lineWidth = (box.borderWidth || 2) * (w / (pageData.container.offsetWidth || w));
 
                     if (box.borderStyle === "dashed") {
@@ -3436,6 +3578,30 @@
                     }
                     ctx.stroke();
                   }
+                  ctx.restore();
+                });
+
+                // 2.5 繪製線條註記
+                const pageLines = (pdfLineAnnotations || []).filter((l) => l.pageNum === pageNum);
+                pageLines.forEach((line) => {
+                  const lx1 = line.x1Ratio * w;
+                  const ly1 = line.y1Ratio * h;
+                  const lx2 = line.x2Ratio * w;
+                  const ly2 = line.y2Ratio * h;
+                  ctx.save();
+                  ctx.beginPath();
+                  ctx.moveTo(lx1, ly1);
+                  ctx.lineTo(lx2, ly2);
+                  ctx.strokeStyle = line.stroke || "#1e293b";
+                  ctx.lineWidth = (line.borderWidth || 2) * (w / (pageData.container.offsetWidth || w));
+                  if (line.borderStyle === "dashed") {
+                    ctx.setLineDash([ctx.lineWidth * 3, ctx.lineWidth * 2]);
+                  } else if (line.borderStyle === "dotted") {
+                    ctx.setLineDash([ctx.lineWidth, ctx.lineWidth * 1.5]);
+                  } else {
+                    ctx.setLineDash([]);
+                  }
+                  ctx.stroke();
                   ctx.restore();
                 });
 
@@ -3661,6 +3827,14 @@
               boxContainer.style.zIndex = "15";
               pageContainer.appendChild(boxContainer);
 
+              // 線條層 (z-18)
+              const lineContainer = d.createElement("div");
+              lineContainer.style.position = "absolute";
+              lineContainer.style.inset = "0";
+              lineContainer.style.pointerEvents = "none";
+              lineContainer.style.zIndex = "18";
+              pageContainer.appendChild(lineContainer);
+
               // 文字註解層 (z-20)
               const textContainer = d.createElement("div");
               textContainer.style.position = "absolute";
@@ -3701,6 +3875,7 @@
                 container: pageContainer,
                 anchorContainer,
                 boxContainer,
+                lineContainer,
                 textContainer,
                 viewport,
               });
@@ -3715,6 +3890,7 @@
             window.renderPdfAnchorsInWindow(w);
             window.renderPdfTextAnnotations(w);
             window.renderPdfBoxAnnotations(w);
+            window.renderPdfLineAnnotations(w);
 
             const zoomFitBtn = d.getElementById("zoom-fit-btn");
             if (zoomFitBtn) zoomFitBtn.click();
@@ -3863,14 +4039,14 @@
           let xRatio, yRatio, widthRatio, heightRatio;
 
           if (width < 12 && height < 12) {
-            // 若點擊未拖曳，產生預設尺寸方框
-            widthRatio = 0.16;
-            heightRatio = 0.08;
-            xRatio = Math.max(0.01, Math.min(1 - widthRatio, (drawBoxStartClientX - rect.left) / rect.width - widthRatio / 2));
-            yRatio = Math.max(0.01, Math.min(1 - heightRatio, (drawBoxStartClientY - rect.top) / rect.height - heightRatio / 2));
+            // 若點擊未拖曳，產生預設尺寸方框（更貼合單一數字/音符大小）
+            widthRatio = 0.04;
+            heightRatio = 0.03;
+            xRatio = Math.max(0.001, Math.min(1 - widthRatio, (drawBoxStartClientX - rect.left) / rect.width - widthRatio / 2));
+            yRatio = Math.max(0.001, Math.min(1 - heightRatio, (drawBoxStartClientY - rect.top) / rect.height - heightRatio / 2));
           } else {
-            xRatio = Math.max(0.005, Math.min(0.99, (left - rect.left) / rect.width));
-            yRatio = Math.max(0.005, Math.min(0.99, (top - rect.top) / rect.height));
+            xRatio = Math.max(0.001, Math.min(0.999, (left - rect.left) / rect.width));
+            yRatio = Math.max(0.001, Math.min(0.999, (top - rect.top) / rect.height));
             widthRatio = Math.min(1 - xRatio, width / rect.width);
             heightRatio = Math.min(1 - yRatio, height / rect.height);
           }
@@ -3880,8 +4056,8 @@
             pageNum: pageNum,
             xRatio: xRatio,
             yRatio: yRatio,
-            widthRatio: Math.max(0.02, widthRatio),
-            heightRatio: Math.max(0.015, heightRatio),
+            widthRatio: Math.max(0.003, widthRatio),
+            heightRatio: Math.max(0.002, heightRatio),
             ...currentBoxProps,
           };
 
@@ -3901,6 +4077,145 @@
           try { saveState(); } catch (err) {}
 
           drawBoxTargetPage = null;
+        });
+
+        // 線條拉取狀態
+        let isDrawingLine = false;
+        let drawLineStartClientX = 0, drawLineStartClientY = 0;
+        let drawLineTargetPage = null;
+        let drawLinePreviewEl = null;
+
+        pdfViewerContainer.addEventListener("mousedown", (e) => {
+          if (!isLineMode) return;
+          if (e.target && (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".sheet-line-item") || e.target.closest(".anchor-mark") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn") || e.target.closest("#line-tool-btn"))) {
+            return;
+          }
+          const targetPage = e.target.closest(".page-container");
+          if (!targetPage) return;
+
+          e.preventDefault();
+          e.stopPropagation();
+
+          isDrawingLine = true;
+          drawLineTargetPage = targetPage;
+          drawLineStartClientX = e.clientX;
+          drawLineStartClientY = e.clientY;
+
+          const rect = targetPage.getBoundingClientRect();
+          const currentZoom = parseFloat(scaleWrapper.style.zoom) || 1;
+          const startX = (e.clientX - rect.left) / currentZoom;
+          const startY = (e.clientY - rect.top) / currentZoom;
+
+          drawLinePreviewEl = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+          drawLinePreviewEl.style.position = "absolute";
+          drawLinePreviewEl.style.inset = "0";
+          drawLinePreviewEl.style.width = "100%";
+          drawLinePreviewEl.style.height = "100%";
+          drawLinePreviewEl.style.pointerEvents = "none";
+          drawLinePreviewEl.style.zIndex = "55";
+          drawLinePreviewEl.innerHTML = `<line x1="${startX}" y1="${startY}" x2="${startX}" y2="${startY}" stroke="${currentLineProps.stroke}" stroke-width="${currentLineProps.borderWidth}" stroke-dasharray="${currentLineProps.borderStyle === 'dashed' ? '8,6' : currentLineProps.borderStyle === 'dotted' ? '2,4' : 'none'}" stroke-linecap="round" />`;
+          targetPage.appendChild(drawLinePreviewEl);
+        });
+
+        win.document.addEventListener("mousemove", (e) => {
+          if (!isDrawingLine || !drawLinePreviewEl || !drawLineTargetPage) return;
+          e.preventDefault();
+
+          const rect = drawLineTargetPage.getBoundingClientRect();
+          const currentZoom = parseFloat(scaleWrapper.style.zoom) || 1;
+          const startX = (drawLineStartClientX - rect.left) / currentZoom;
+          const startY = (drawLineStartClientY - rect.top) / currentZoom;
+          let curX = (e.clientX - rect.left) / currentZoom;
+          let curY = (e.clientY - rect.top) / currentZoom;
+
+          // 按住 Shift 鍵鎖定水平或垂直
+          if (e.shiftKey) {
+            const dx = Math.abs(curX - startX);
+            const dy = Math.abs(curY - startY);
+            if (dx >= dy) {
+              curY = startY; // 水平線
+            } else {
+              curX = startX; // 垂直線
+            }
+          }
+
+          const line = drawLinePreviewEl.querySelector("line");
+          if (line) {
+            line.setAttribute("x2", curX);
+            line.setAttribute("y2", curY);
+          }
+        });
+
+        win.document.addEventListener("mouseup", (e) => {
+          if (!isDrawingLine) return;
+          isDrawingLine = false;
+
+          if (drawLinePreviewEl) {
+            drawLinePreviewEl.remove();
+            drawLinePreviewEl = null;
+          }
+
+          if (!drawLineTargetPage) return;
+
+          const pageNum = parseInt(drawLineTargetPage.dataset.pageNum) || 1;
+          const rect = drawLineTargetPage.getBoundingClientRect();
+
+          let endClientX = e.clientX;
+          let endClientY = e.clientY;
+
+          // 按住 Shift 鍵鎖定水平或垂直
+          if (e.shiftKey) {
+            const dx = Math.abs(endClientX - drawLineStartClientX);
+            const dy = Math.abs(endClientY - drawLineStartClientY);
+            if (dx >= dy) {
+              endClientY = drawLineStartClientY; // 水平線
+            } else {
+              endClientX = drawLineStartClientX; // 垂直線
+            }
+          }
+
+          let x1Ratio = Math.max(0.001, Math.min(0.999, (drawLineStartClientX - rect.left) / rect.width));
+          let y1Ratio = Math.max(0.001, Math.min(0.999, (drawLineStartClientY - rect.top) / rect.height));
+          let x2Ratio = Math.max(0.001, Math.min(0.999, (endClientX - rect.left) / rect.width));
+          let y2Ratio = Math.max(0.001, Math.min(0.999, (endClientY - rect.top) / rect.height));
+
+          const dist = Math.hypot((endClientX - drawLineStartClientX), (endClientY - drawLineStartClientY));
+          if (dist < 10) {
+            // 單擊未拖曳時，自動產生一段預設長度的水平直線
+            x2Ratio = Math.min(0.999, x1Ratio + 0.08);
+            y2Ratio = y1Ratio;
+          }
+
+          const newLine = {
+            id: Date.now(),
+            pageNum: pageNum,
+            x1Ratio: x1Ratio,
+            y1Ratio: y1Ratio,
+            x2Ratio: x2Ratio,
+            y2Ratio: y2Ratio,
+            ...currentLineProps,
+          };
+
+          pdfLineAnnotations.push(newLine);
+          activeLineId = newLine.id;
+          activeTextId = null;
+          activeBoxId = null;
+          isLineMode = false;
+          updateToolButtonsUI();
+
+          window.renderPdfLineAnnotations(win);
+          window.renderPdfBoxAnnotations(win);
+          window.renderPdfTextAnnotations(win);
+
+          if (linePanel) {
+            linePanel.style.display = "block";
+            syncLinePanelUI(newLine);
+          }
+          if (textPanel) textPanel.style.display = "none";
+          if (boxPanel) boxPanel.style.display = "none";
+          try { saveState(); } catch (err) {}
+
+          drawLineTargetPage = null;
         });
 
         // --- 節拍器功能元件 (獨立 Web Worker + Web Audio 絕對排程引擎) ---
@@ -4216,7 +4531,74 @@
             }
           }
 
+          // Command/Ctrl + B, I, U 快速切換選取文字之粗體、斜體、底線
+          if (e.metaKey || e.ctrlKey) {
+            const keyLower = e.key.toLowerCase();
+            if (keyLower === "b" || keyLower === "i" || keyLower === "u") {
+              e.preventDefault();
+              const propName = keyLower === "b" ? "bold" : (keyLower === "i" ? "italic" : "underline");
+              updateActiveTextProps((item) => {
+                item[propName] = !item[propName];
+              });
+              return;
+            }
+          }
+
           if (!isEditingText) {
+            // 物件選取時，支援按方向鍵上下左右微調位置 (Shift + 方向鍵可大幅移動)
+            if (activeTextId || activeBoxId || activeLineId) {
+              if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+                e.preventDefault();
+                const stepPx = e.shiftKey ? 1.0 : 0.2; // 預設超精細微調 0.2px，按住 Shift 則為 1px
+                let targetPageNum = 1;
+                if (activeTextId) {
+                  const t = pdfTextAnnotations.find((item) => item.id === activeTextId);
+                  if (t) targetPageNum = t.pageNum;
+                } else if (activeBoxId) {
+                  const b = pdfBoxAnnotations.find((item) => item.id === activeBoxId);
+                  if (b) targetPageNum = b.pageNum;
+                } else if (activeLineId) {
+                  const l = pdfLineAnnotations.find((item) => item.id === activeLineId);
+                  if (l) targetPageNum = l.pageNum;
+                }
+
+                const pageData = win.pdfPagesRendered[targetPageNum - 1];
+                const pageW = pageData && pageData.container ? pageData.container.offsetWidth : 800;
+                const pageH = pageData && pageData.container ? pageData.container.offsetHeight : 1100;
+                const dx = (e.key === "ArrowLeft" ? -stepPx : e.key === "ArrowRight" ? stepPx : 0) / pageW;
+                const dy = (e.key === "ArrowUp" ? -stepPx : e.key === "ArrowDown" ? stepPx : 0) / pageH;
+
+                if (activeTextId) {
+                  const t = pdfTextAnnotations.find((item) => item.id === activeTextId);
+                  if (t) {
+                    t.xRatio = Math.max(0.001, Math.min(0.999, t.xRatio + dx));
+                    t.yRatio = Math.max(0.001, Math.min(0.999, t.yRatio + dy));
+                    window.renderPdfTextAnnotations(win);
+                    saveState();
+                  }
+                } else if (activeBoxId) {
+                  const b = pdfBoxAnnotations.find((item) => item.id === activeBoxId);
+                  if (b) {
+                    b.xRatio = Math.max(0.001, Math.min(1 - b.widthRatio, b.xRatio + dx));
+                    b.yRatio = Math.max(0.001, Math.min(1 - b.heightRatio, b.yRatio + dy));
+                    window.renderPdfBoxAnnotations(win);
+                    saveState();
+                  }
+                } else if (activeLineId) {
+                  const l = pdfLineAnnotations.find((item) => item.id === activeLineId);
+                  if (l) {
+                    l.x1Ratio = Math.max(0.001, Math.min(0.999, l.x1Ratio + dx));
+                    l.y1Ratio = Math.max(0.001, Math.min(0.999, l.y1Ratio + dy));
+                    l.x2Ratio = Math.max(0.001, Math.min(0.999, l.x2Ratio + dx));
+                    l.y2Ratio = Math.max(0.001, Math.min(0.999, l.y2Ratio + dy));
+                    window.renderPdfLineAnnotations(win);
+                    saveState();
+                  }
+                }
+                return;
+              }
+            }
+
             if (e.key === "Enter") {
               e.preventDefault();
               toggleMetronome();
@@ -4255,6 +4637,9 @@
             } else if (e.key.toLowerCase() === "r") {
               e.preventDefault();
               if (boxToolBtn) boxToolBtn.click();
+            } else if (e.key.toLowerCase() === "l") {
+              e.preventDefault();
+              if (lineToolBtn) lineToolBtn.click();
             }
           }
 
@@ -4276,16 +4661,29 @@
               window.renderPdfBoxAnnotations(win);
               modified = true;
             }
+            if (activeLineId) {
+              e.preventDefault();
+              pdfLineAnnotations = pdfLineAnnotations.filter((l) => l.id !== activeLineId);
+              activeLineId = null;
+              if (linePanel) linePanel.style.display = "none";
+              window.renderPdfLineAnnotations(win);
+              modified = true;
+            }
             if (modified) {
               try { saveState(); } catch (err) {}
             }
           }
         });
 
-        // 點擊空白處取消文字/方框選中
+        // 點擊空白處取消文字/方框/線條選中
         doc.addEventListener("click", (e) => {
-          if (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn") || e.target.closest("#sheet-metronome-container")) {
+          if (e.target.closest(".sheet-text-item") || e.target.closest(".sheet-box-item") || e.target.closest(".sheet-line-item") || e.target.closest(".floating-panel") || e.target.closest("#text-tool-btn") || e.target.closest("#box-tool-btn") || e.target.closest("#line-tool-btn") || e.target.closest("#sheet-metronome-container")) {
             return;
+          }
+          if (activeLineId) {
+            activeLineId = null;
+            if (linePanel) linePanel.style.display = "none";
+            window.renderPdfLineAnnotations(win);
           }
           if (activeTextId) {
             const el = doc.getElementById(`text-item-${activeTextId}`);
@@ -4705,8 +5103,8 @@
             const dw = (clientX - resizeStartX) / rect.width;
             const dh = (clientY - resizeStartY) / rect.height;
 
-            const nw = Math.max(0.03, Math.min(1 - item.xRatio, initialW + dw));
-            const nh = Math.max(0.02, Math.min(1 - item.yRatio, initialH + dh));
+            const nw = Math.max(0.003, Math.min(1 - item.xRatio, initialW + dw));
+            const nh = Math.max(0.002, Math.min(1 - item.yRatio, initialH + dh));
 
             boxEl.style.width = nw * 100 + "%";
             boxEl.style.height = nh * 100 + "%";
@@ -4733,6 +5131,189 @@
           win.document.addEventListener("touchend", onStopResize);
 
           pageData.boxContainer.appendChild(boxEl);
+        });
+      };
+
+      // 渲染所有頁面上的線條標籤 (支援整體拖曳、兩端點拉動與刪除)
+      window.renderPdfLineAnnotations = function (win) {
+        if (!win || !win.pdfPagesRendered) return;
+
+        win.pdfPagesRendered.forEach((p) => {
+          if (p.lineContainer) p.lineContainer.innerHTML = "";
+        });
+
+        (pdfLineAnnotations || []).forEach((item) => {
+          const pageData = win.pdfPagesRendered[item.pageNum - 1];
+          if (!pageData || !pageData.lineContainer) return;
+
+          const svg = win.document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.id = `line-item-${item.id}`;
+          svg.classList.add("sheet-line-item");
+          svg.style.position = "absolute";
+          svg.style.inset = "0";
+          svg.style.width = "100%";
+          svg.style.height = "100%";
+          svg.style.overflow = "visible";
+          svg.style.pointerEvents = "none";
+
+          const isSelected = activeLineId === item.id;
+          const dash = item.borderStyle === "dashed" ? "8,6" : (item.borderStyle === "dotted" ? "2,4" : "none");
+
+          // 主線條、感應加寬線條與選取端點
+          svg.innerHTML = `
+            <line class="hit-line" x1="${item.x1Ratio * 100}%" y1="${item.y1Ratio * 100}%" x2="${item.x2Ratio * 100}%" y2="${item.y2Ratio * 100}%" stroke="transparent" stroke-width="${Math.max(18, item.borderWidth + 14)}" stroke-linecap="round" style="pointer-events:stroke; cursor:grab;" />
+            <line class="main-line" x1="${item.x1Ratio * 100}%" y1="${item.y1Ratio * 100}%" x2="${item.x2Ratio * 100}%" y2="${item.y2Ratio * 100}%" stroke="${item.stroke}" stroke-width="${item.borderWidth}" stroke-dasharray="${dash}" stroke-linecap="round" style="pointer-events:none;" />
+            ${isSelected ? `
+              <circle class="handle-1" cx="${item.x1Ratio * 100}%" cy="${item.y1Ratio * 100}%" r="7" fill="#3b82f6" stroke="#ffffff" stroke-width="2" style="pointer-events:auto; cursor:crosshair;" />
+              <circle class="handle-2" cx="${item.x2Ratio * 100}%" cy="${item.y2Ratio * 100}%" r="7" fill="#3b82f6" stroke="#ffffff" stroke-width="2" style="pointer-events:auto; cursor:crosshair;" />
+            ` : ""}
+          `;
+
+          // 刪除按鈕 (位於線條中央)
+          let removeBtn = null;
+          if (isSelected) {
+            removeBtn = win.document.createElement("div");
+            removeBtn.className = "remove-line-btn";
+            removeBtn.style.position = "absolute";
+            removeBtn.style.left = `${((item.x1Ratio + item.x2Ratio) / 2) * 100}%`;
+            removeBtn.style.top = `${((item.y1Ratio + item.y2Ratio) / 2) * 100}%`;
+            removeBtn.style.transform = "translate(-50%, -50%)";
+            removeBtn.style.background = "#ef4444";
+            removeBtn.style.color = "white";
+            removeBtn.style.borderRadius = "50%";
+            removeBtn.style.width = "18px";
+            removeBtn.style.height = "18px";
+            removeBtn.style.display = "flex";
+            removeBtn.style.alignItems = "center";
+            removeBtn.style.justifyContent = "center";
+            removeBtn.style.fontSize = "10px";
+            removeBtn.style.fontWeight = "bold";
+            removeBtn.style.cursor = "pointer";
+            removeBtn.style.boxShadow = "0 2px 4px rgba(0,0,0,0.3)";
+            removeBtn.style.zIndex = "40";
+            removeBtn.style.border = "1.5px solid white";
+            removeBtn.style.pointerEvents = "auto";
+            removeBtn.title = "刪除線條";
+            removeBtn.textContent = "✕";
+
+            removeBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              pdfLineAnnotations = pdfLineAnnotations.filter((l) => l.id !== item.id);
+              activeLineId = null;
+              win.document.getElementById("line-editor-panel").style.display = "none";
+              window.renderPdfLineAnnotations(win);
+              saveState();
+            });
+            pageData.lineContainer.appendChild(removeBtn);
+          }
+
+          const hitLine = svg.querySelector(".hit-line");
+          hitLine.addEventListener("mousedown", (e) => {
+            e.stopPropagation();
+            activeLineId = item.id;
+            activeTextId = null;
+            activeBoxId = null;
+
+            win.document.getElementById("text-editor-panel").style.display = "none";
+            win.document.getElementById("box-editor-panel").style.display = "none";
+
+            const panel = win.document.getElementById("line-editor-panel");
+            if (panel) {
+              panel.style.display = "block";
+              win.document.querySelectorAll("#line-stroke-grid .color-btn").forEach((b) => b.classList.toggle("active", b.dataset.stroke === item.stroke));
+              win.document.querySelectorAll("#line-width-control .segment-item").forEach((b) => b.classList.toggle("active", parseInt(b.dataset.width) === item.borderWidth));
+              win.document.querySelectorAll("#line-style-control .segment-item").forEach((b) => b.classList.toggle("active", b.dataset.style === item.borderStyle));
+            }
+            window.renderPdfLineAnnotations(win);
+            window.renderPdfTextAnnotations(win);
+            window.renderPdfBoxAnnotations(win);
+
+            // 線條整體平移拖曳
+            let startClientX = e.clientX, startClientY = e.clientY;
+            let origX1 = item.x1Ratio, origY1 = item.y1Ratio;
+            let origX2 = item.x2Ratio, origY2 = item.y2Ratio;
+            let isMoving = true;
+
+            const onMove = (ev) => {
+              if (!isMoving) return;
+              ev.preventDefault();
+              const rect = pageData.container.getBoundingClientRect();
+              const dx = (ev.clientX - startClientX) / rect.width;
+              const dy = (ev.clientY - startClientY) / rect.height;
+              item.x1Ratio = Math.max(0.001, Math.min(0.999, origX1 + dx));
+              item.y1Ratio = Math.max(0.001, Math.min(0.999, origY1 + dy));
+              item.x2Ratio = Math.max(0.001, Math.min(0.999, origX2 + dx));
+              item.y2Ratio = Math.max(0.001, Math.min(0.999, origY2 + dy));
+              window.renderPdfLineAnnotations(win);
+            };
+
+            const onUp = () => {
+              isMoving = false;
+              win.document.removeEventListener("mousemove", onMove);
+              win.document.removeEventListener("mouseup", onUp);
+              saveState();
+            };
+
+            win.document.addEventListener("mousemove", onMove);
+            win.document.addEventListener("mouseup", onUp);
+          });
+
+          // 綁定端點 1 與端點 2 的獨立拖曳
+          const h1 = svg.querySelector(".handle-1");
+          const h2 = svg.querySelector(".handle-2");
+
+          function bindHandleDrag(handleEl, isFirstPoint) {
+            if (!handleEl) return;
+            handleEl.addEventListener("mousedown", (e) => {
+              e.stopPropagation();
+              let isDraggingPoint = true;
+
+              const onPointMove = (ev) => {
+                if (!isDraggingPoint) return;
+                ev.preventDefault();
+                const rect = pageData.container.getBoundingClientRect();
+                let nx = Math.max(0.001, Math.min(0.999, (ev.clientX - rect.left) / rect.width));
+                let ny = Math.max(0.001, Math.min(0.999, (ev.clientY - rect.top) / rect.height));
+
+                // 拖曳端點時若按住 Shift 鍵，相對於另一固定端點鎖定水平或垂直
+                if (ev.shiftKey) {
+                  const anchorX = isFirstPoint ? item.x2Ratio : item.x1Ratio;
+                  const anchorY = isFirstPoint ? item.y2Ratio : item.y1Ratio;
+                  const dx = Math.abs((nx - anchorX) * rect.width);
+                  const dy = Math.abs((ny - anchorY) * rect.height);
+                  if (dx >= dy) {
+                    ny = anchorY; // 水平線
+                  } else {
+                    nx = anchorX; // 垂直線
+                  }
+                }
+
+                if (isFirstPoint) {
+                  item.x1Ratio = nx;
+                  item.y1Ratio = ny;
+                } else {
+                  item.x2Ratio = nx;
+                  item.y2Ratio = ny;
+                }
+                window.renderPdfLineAnnotations(win);
+              };
+
+              const onPointUp = () => {
+                isDraggingPoint = false;
+                win.document.removeEventListener("mousemove", onPointMove);
+                win.document.removeEventListener("mouseup", onPointUp);
+                saveState();
+              };
+
+              win.document.addEventListener("mousemove", onPointMove);
+              win.document.addEventListener("mouseup", onPointUp);
+            });
+          }
+
+          bindHandleDrag(h1, true);
+          bindHandleDrag(h2, false);
+
+          pageData.lineContainer.appendChild(svg);
         });
       };
 

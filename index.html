@@ -5150,14 +5150,14 @@
               cloned.id = Date.now();
               pdfTextAnnotations.push(cloned);
               activeTextId = cloned.id;
+              targetItem = cloned;
+              isDragging = true;
+              moved = true;
               window.renderPdfTextAnnotations(win);
 
               const newEl = win.document.getElementById(`text-item-${cloned.id}`);
               if (newEl) {
-                targetItem = cloned;
                 currentDragEl = newEl;
-                isDragging = true;
-                moved = true;
                 currentDragEl.style.cursor = "grabbing";
               }
               return;
@@ -5321,14 +5321,16 @@
               cloned.id = Date.now();
               pdfBoxAnnotations.push(cloned);
               activeBoxId = cloned.id;
+              targetItem = cloned;
+              baseStartXRatio = cloned.xRatio;
+              baseStartYRatio = cloned.yRatio;
+              isDragging = true;
+              moved = true;
               window.renderPdfBoxAnnotations(win);
 
               const newEl = win.document.getElementById(`box-item-${cloned.id}`);
               if (newEl) {
-                targetItem = cloned;
                 currentDragEl = newEl;
-                isDragging = true;
-                moved = true;
                 currentDragEl.style.cursor = "grabbing";
               }
               return;
@@ -5514,7 +5516,19 @@
           const hitLine = svg.querySelector(".hit-line");
           hitLine.addEventListener("mousedown", (e) => {
             e.stopPropagation();
-            activeLineId = item.id;
+            if (e.metaKey || e.ctrlKey) e.preventDefault();
+
+            let targetItem = item;
+            if (e.metaKey || e.ctrlKey) {
+              const cloned = JSON.parse(JSON.stringify(item));
+              cloned.id = Date.now();
+              pdfLineAnnotations.push(cloned);
+              activeLineId = cloned.id;
+              targetItem = cloned;
+            } else {
+              activeLineId = item.id;
+            }
+
             activeArcId = null;
             activeTextId = null;
             activeBoxId = null;
@@ -5712,7 +5726,19 @@
           const hitArc = svg.querySelector(".hit-arc");
           hitArc.addEventListener("mousedown", (e) => {
             e.stopPropagation();
-            activeArcId = item.id;
+            if (e.metaKey || e.ctrlKey) e.preventDefault();
+
+            let targetItem = item;
+            if (e.metaKey || e.ctrlKey) {
+              const cloned = JSON.parse(JSON.stringify(item));
+              cloned.id = Date.now();
+              pdfArcAnnotations.push(cloned);
+              activeArcId = cloned.id;
+              targetItem = cloned;
+            } else {
+              activeArcId = item.id;
+            }
+
             activeLineId = null;
             activeTextId = null;
             activeBoxId = null;

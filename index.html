@@ -3048,6 +3048,11 @@
                         </div>
                     </div>
                 </div>
+                <!-- 底部頁數進度條 -->
+                <div id="sheet-page-indicator" style="position:fixed; bottom:0; left:0; right:0; height:24px; background:rgba(17,24,39,0.85); backdrop-filter:blur(4px); border-top:1px solid #374151; z-index:150; display:none; align-items:center; user-select:none; pointer-events:none;">
+                    <div id="sheet-progress-bar" style="position:absolute; top:0; bottom:0; left:0; width:0%; background:#2563eb; opacity:0.85; transition:width 0.15s ease-out;"></div>
+                    <div id="sheet-page-text" style="position:relative; width:100%; text-align:center; font-size:12px; font-weight:bold; color:#ffffff; text-shadow:0 1px 3px rgba(0,0,0,0.8); z-index:1;">0 / 0 頁 (0%)</div>
+                </div>
             </body>
             </html>
             `);
@@ -4035,6 +4040,46 @@
             window.renderPdfBoxAnnotations(w);
             window.renderPdfLineAnnotations(w);
             window.renderPdfArcAnnotations(w);
+
+            // 初始化底部頁數進度條
+            const indicatorEl = d.getElementById("sheet-page-indicator");
+            const progressBar = d.getElementById("sheet-progress-bar");
+            const pageText = d.getElementById("sheet-page-text");
+
+            function updatePageIndicator() {
+              if (!w.pdfPagesRendered || w.pdfPagesRendered.length === 0) return;
+              const total = w.pdfPagesRendered.length;
+              const containerTop = pdfViewerContainer.scrollTop;
+              const containerCenter = containerTop + pdfViewerContainer.clientHeight / 2;
+
+              let curPage = 1;
+              for (let idx = 0; idx < total; idx++) {
+                const p = w.pdfPagesRendered[idx];
+                const top = p.container.offsetTop;
+                const bottom = top + p.container.offsetHeight;
+                if (containerCenter >= top && containerCenter <= bottom) {
+                  curPage = idx + 1;
+                  break;
+                } else if (containerCenter < top) {
+                  curPage = Math.max(1, idx);
+                  break;
+                } else if (idx === total - 1) {
+                  curPage = total;
+                }
+              }
+
+              const percent = Math.round((curPage / total) * 100);
+              if (progressBar) progressBar.style.width = percent + "%";
+              if (pageText) pageText.textContent = `第 ${curPage} 頁 / 共 ${total} 頁 (${percent}%)`;
+            }
+
+            if (indicatorEl) {
+              indicatorEl.style.display = "flex";
+              pdfViewerContainer.removeEventListener("scroll", pdfViewerContainer._onPdfScroll);
+              pdfViewerContainer._onPdfScroll = updatePageIndicator;
+              pdfViewerContainer.addEventListener("scroll", updatePageIndicator);
+              updatePageIndicator();
+            }
 
             const zoomFitBtn = d.getElementById("zoom-fit-btn");
             if (zoomFitBtn) zoomFitBtn.click();

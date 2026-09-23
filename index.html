@@ -4049,22 +4049,31 @@
             function updatePageIndicator() {
               if (!w.pdfPagesRendered || w.pdfPagesRendered.length === 0) return;
               const total = w.pdfPagesRendered.length;
-              const containerTop = pdfViewerContainer.scrollTop;
-              const containerCenter = containerTop + pdfViewerContainer.clientHeight / 2;
+
+              const cScrollTop = pdfViewerContainer.scrollTop;
+              const cClientHeight = pdfViewerContainer.clientHeight;
+              const cScrollHeight = pdfViewerContainer.scrollHeight;
 
               let curPage = 1;
-              for (let idx = 0; idx < total; idx++) {
-                const p = w.pdfPagesRendered[idx];
-                const top = p.container.offsetTop;
-                const bottom = top + p.container.offsetHeight;
-                if (containerCenter >= top && containerCenter <= bottom) {
-                  curPage = idx + 1;
-                  break;
-                } else if (containerCenter < top) {
-                  curPage = Math.max(1, idx);
-                  break;
-                } else if (idx === total - 1) {
-                  curPage = total;
+
+              // 優先判定 1：若已滾動至最底部（容許誤差 15px），直接判定為最後一頁
+              if (cScrollTop + cClientHeight >= cScrollHeight - 15) {
+                curPage = total;
+              } else {
+                // 優先判定 2：計算每一頁在當前可視視窗中的「可見高度」，取露出面積最大者
+                const cRect = pdfViewerContainer.getBoundingClientRect();
+                let maxVisibleHeight = -1;
+
+                for (let idx = 0; idx < total; idx++) {
+                  const pRect = w.pdfPagesRendered[idx].container.getBoundingClientRect();
+                  const visibleTop = Math.max(cRect.top, pRect.top);
+                  const visibleBottom = Math.min(cRect.bottom, pRect.bottom);
+                  const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+
+                  if (visibleHeight > maxVisibleHeight) {
+                    maxVisibleHeight = visibleHeight;
+                    curPage = idx + 1;
+                  }
                 }
               }
 

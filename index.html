@@ -2797,7 +2797,7 @@
                             <button class="btn" id="zoom-fit-btn" style="padding:2px 10px; font-size:12px; background:#10b981;">放寬</button>
                             <button class="btn" id="zoom-fit-height-btn" style="padding:2px 10px; font-size:12px; background:#f59e0b;">放直</button>
                             <div style="width: 1px; height: 20px; background: #6b7280; margin: 0 4px;"></div>
-                            <button class="btn toggle-sidebar-btn" style="padding:2px 10px; font-size:12px; background:#4b5563; white-space:nowrap;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); s.classList.toggle('collapsed'); const isCollapsed = s.classList.contains('collapsed'); this.textContent = isCollapsed ? '展開' : '收合'; resizer.style.display = isCollapsed ? 'none' : 'block';">收合</button>
+                            <button class="btn" id="zoom-center-btn" style="padding:2px 10px; font-size:12px; background:#3b82f6; white-space:nowrap;" title="將譜面水平捲動置中">置中</button>
                         </div>
                         <button class="btn" id="export-pdf-btn" style="background:#059669; font-weight:bold; display:flex; align-items:center; gap:4px; padding:6px 14px;" title="匯出包含文字與方框標註的新 PDF 檔">匯出 PDF</button>
                     </div>
@@ -3040,13 +3040,12 @@
                         .sidebar.collapsed * { display: none !important; }
                     </style>
                     <div class="sidebar" id="sheet-regions-list">
-                        <div id="sidebar-top-container">
-                            <div style="margin-bottom:12px;">
-                                <span class="sidebar-title" style="font-size:14px; font-weight:bold; color:#d1d5db;">區塊清單</span>
-                            </div>
-                            <div class="sidebar-desc" style="font-size:12px; color:#9ca3af; margin-bottom:16px; line-height:1.6;">拖曳下方按鈕至左側文件建立錨點。<br>點擊按鈕可跳轉對應頁面。</div>
+                        <div id="sidebar-top-container" style="margin-bottom:8px; display:flex; justify-content:center;">
+                            <button class="btn toggle-sidebar-btn" style="width:100%; padding:4px 8px; font-size:12px; background:#4b5563; white-space:nowrap;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); const expandBtn = document.getElementById('expand-sidebar-btn'); s.classList.add('collapsed'); resizer.style.display = 'none'; if(expandBtn) expandBtn.style.display = 'flex';">收合 ▶</button>
                         </div>
                     </div>
+                    <!-- 收合後浮動在右上角的展開按鈕 -->
+                    <button id="expand-sidebar-btn" class="btn" style="display:none; position:absolute; right:12px; top:12px; z-index:95; background:rgba(31,41,55,0.9); border:1px solid #4b5563; box-shadow:0 4px 12px rgba(0,0,0,0.5); padding:6px 12px; font-size:12px; align-items:center; gap:4px;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); s.classList.remove('collapsed'); resizer.style.display = 'block'; this.style.display = 'none';">◀ 區塊</button>
                 </div>
                 <!-- 底部頁數進度條 -->
                 <div id="sheet-page-indicator" style="position:fixed; bottom:0; left:0; right:0; height:24px; background:rgba(17,24,39,0.85); backdrop-filter:blur(4px); border-top:1px solid #374151; z-index:150; display:none; align-items:center; user-select:none; pointer-events:none;">
@@ -3578,6 +3577,21 @@
               const originalPageHeight = win.pdfPagesRendered[0].viewport.height;
               const fitZoom = containerHeight / originalPageHeight;
               setPdfZoom(fitZoom);
+            }
+          };
+        }
+
+        const zoomCenterBtn = doc.getElementById("zoom-center-btn");
+        if (zoomCenterBtn) {
+          zoomCenterBtn.onclick = () => {
+            const pdfViewerContainer = doc.getElementById("pdf-viewer-container");
+            if (!pdfViewerContainer) return;
+            const maxScrollLeft = pdfViewerContainer.scrollWidth - pdfViewerContainer.clientWidth;
+            if (maxScrollLeft > 0) {
+              pdfViewerContainer.scrollTo({
+                left: maxScrollLeft / 2,
+                behavior: "smooth",
+              });
             }
           };
         }
@@ -4672,6 +4686,9 @@
         metroToggleBtn.addEventListener("click", toggleCollapse);
         metroToggleBtn.addEventListener("mousedown", (e) => e.stopPropagation());
         metroToggleBtn.addEventListener("touchstart", (e) => e.stopPropagation());
+
+        // 預設將節拍器收合並放置在左下角
+        toggleCollapse();
 
         let isMetroDragging = false;
         let dragStartY = 0;
@@ -6110,9 +6127,9 @@
         const list = sheetWindow.document.getElementById("sheet-regions-list");
         if (!list) return;
 
-        const desc = list.querySelector("div");
+        const topContainer = sheetWindow.document.getElementById("sidebar-top-container");
         list.innerHTML = "";
-        if (desc) list.appendChild(desc);
+        if (topContainer) list.appendChild(topContainer);
 
         customRegions.forEach((reg) => {
           const btn = sheetWindow.document.createElement("div");

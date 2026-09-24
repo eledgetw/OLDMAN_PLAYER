@@ -4623,18 +4623,50 @@
         const metroDragHandle = doc.getElementById("metro-drag-handle");
 
         let isMetroCollapsed = false;
+        let lastExpandedTop = 80;
+
         const toggleCollapse = (e) => {
-          e.stopPropagation();
+          if (e) e.stopPropagation();
           isMetroCollapsed = !isMetroCollapsed;
+          metroContainer.style.transition = "top 0.25s ease-out";
           if (isMetroCollapsed) {
+            lastExpandedTop = metroContainer.offsetTop;
             metroBody.style.display = "none";
-            metroToggleBtn.textContent = "▼";
-            metroToggleBtn.title = "展開節拍器";
+            metroToggleBtn.style.display = "none";
+            metroDragHandle.style.display = "none";
+            metroContainer.style.padding = "0";
+            metroContainer.style.background = "transparent";
+            metroContainer.style.border = "none";
+            metroContainer.style.boxShadow = "none";
+            metroPlayBtn.style.marginTop = "0";
+            metroPlayBtn.title = "點擊展開節拍器";
+
+            const parentEl = metroContainer.parentElement;
+            const parentHeight = parentEl ? parentEl.clientHeight : 800;
+            // 底部進度條高 24px，按鈕高 40px，距離進度條上方保留約 8px 間距
+            const collapsedTop = Math.max(10, parentHeight - 24 - 40 - 8);
+            metroContainer.style.top = `${collapsedTop}px`;
           } else {
             metroBody.style.display = "flex";
-            metroToggleBtn.textContent = "▲";
-            metroToggleBtn.title = "收合節拍器";
+            metroToggleBtn.style.display = "block";
+            metroDragHandle.style.display = "flex";
+            metroContainer.style.padding = "8px 6px";
+            metroContainer.style.background = "rgba(31,41,55,0.85)";
+            metroContainer.style.border = "1px solid #4b5563";
+            metroContainer.style.boxShadow = "0 8px 20px rgba(0,0,0,0.5)";
+            metroPlayBtn.style.marginTop = "8px";
+            metroPlayBtn.title = "節拍器 (Enter 開始/暫停，左右鍵 ±5 BPM)";
+
+            const parentEl = metroContainer.parentElement;
+            const parentHeight = parentEl ? parentEl.clientHeight : 800;
+            const containerHeight = metroContainer.offsetHeight;
+            const maxTop = Math.max(10, parentHeight - containerHeight - 34);
+            const restoreTop = Math.max(10, Math.min(lastExpandedTop, maxTop));
+            metroContainer.style.top = `${restoreTop}px`;
           }
+          setTimeout(() => {
+            metroContainer.style.transition = "";
+          }, 250);
         };
 
         metroToggleBtn.addEventListener("click", toggleCollapse);
@@ -4645,8 +4677,11 @@
         let dragStartY = 0;
         let initialTop = 0;
 
+        let hasMetroMoved = false;
+
         const onMetroDragStart = (e) => {
           isMetroDragging = true;
+          hasMetroMoved = false;
           const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
           dragStartY = clientY;
           initialTop = metroContainer.offsetTop;
@@ -4656,9 +4691,12 @@
 
         const onMetroDragMove = (e) => {
           if (!isMetroDragging) return;
-          e.preventDefault();
           const clientY = e.type.includes("touch") ? e.touches[0].clientY : e.clientY;
           const deltaY = clientY - dragStartY;
+          if (Math.abs(deltaY) > 3) {
+            hasMetroMoved = true;
+          }
+          e.preventDefault();
           const parentEl = metroContainer.parentElement;
           const parentHeight = parentEl ? parentEl.clientHeight : 800;
           const containerHeight = metroContainer.offsetHeight;
@@ -4678,6 +4716,18 @@
 
         metroDragHandle.addEventListener("mousedown", onMetroDragStart);
         metroDragHandle.addEventListener("touchstart", onMetroDragStart, { passive: true });
+
+        metroPlayBtn.addEventListener("mousedown", (e) => {
+          if (isMetroCollapsed) {
+            onMetroDragStart(e);
+          }
+        });
+        metroPlayBtn.addEventListener("touchstart", (e) => {
+          if (isMetroCollapsed) {
+            onMetroDragStart(e);
+          }
+        }, { passive: true });
+
         doc.addEventListener("mousemove", onMetroDragMove);
         doc.addEventListener("touchmove", onMetroDragMove, { passive: false });
         doc.addEventListener("mouseup", onMetroDragEnd);
@@ -4767,7 +4817,15 @@
 
         metroPlayBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          toggleMetronome();
+          if (isMetroCollapsed) {
+            if (hasMetroMoved) {
+              hasMetroMoved = false;
+              return;
+            }
+            toggleCollapse(e);
+          } else {
+            toggleMetronome();
+          }
         });
 
         win.addEventListener("beforeunload", () => {

@@ -446,7 +446,7 @@
             "
             class="cursor-pointer hover:text-white transition-colors text-left"
           >
-            <strong class="text-white">M</strong>: <span>取消區域</span>
+            <strong class="text-white">Shift</strong>: <span>取消區域</span>
           </button>
         </div>
         <div class="flex items-center gap-3 pr-4">
@@ -1920,7 +1920,7 @@
           case "b":
             setMode("B");
             break;
-          case "m":
+          case "shift":
             activeRegionIndex = -1;
             loopRegion = null;
             clips.forEach((c) => (c.selected = false));
@@ -5037,12 +5037,12 @@
                   cancelable: true,
                 }),
               );
-            } else if (e.key.toLowerCase() === "m") {
+            } else if (e.key === "Shift") {
               e.preventDefault();
               document.body.dispatchEvent(
                 new KeyboardEvent("keydown", {
-                  key: "m",
-                  code: "KeyM",
+                  key: "Shift",
+                  code: "ShiftLeft",
                   bubbles: true,
                   cancelable: true,
                 }),

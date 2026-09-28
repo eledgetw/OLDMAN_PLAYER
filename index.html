@@ -32,31 +32,9 @@
     <header
       class="bg-gray-800 p-4 flex flex-wrap gap-4 items-center border-b border-gray-700 shadow-md z-10"
     >
-      <h1 class="text-xl font-bold flex items-center gap-2">
-        <svg
-          class="w-6 h-6 text-blue-400"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-          ></path>
-        </svg>
-        <span data-i18n="appTitle">老人的播放器</span>
-      </h1>
+      
       <div class="flex items-center gap-2">
         <input type="file" id="video-upload" accept="video/*" class="hidden" />
-        <button
-          onclick="document.getElementById('video-upload').click()"
-          data-i18n="loadVideo"
-          class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded-lg text-sm"
-        >
-          載入影片
-        </button>
         <input
           type="file"
           id="import-input"
@@ -65,6 +43,14 @@
           class="hidden"
         />
         <button
+          id="import-btn"
+          data-i18n="import"
+          class="bg-red-600 hover:bg-red-500 text-white px-3 py-1 rounded-lg text-sm transition-colors"
+          onclick="document.getElementById('import-input').click()"
+        >
+          匯入
+        </button>
+        <button
           id="export-btn"
           data-i18n="export"
           class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded-lg text-sm"
@@ -72,27 +58,20 @@
           匯出
         </button>
         <button
-          id="import-btn"
-          data-i18n="import"
-          class="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-lg text-base font-bold shadow-lg transition-colors"
-          onclick="document.getElementById('import-input').click()"
-        >
-          匯入
-        </button>
-        <button
-          id="sheet-music-btn"
-          class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded-lg text-sm hidden flex items-center gap-1 shadow"
-          title="開啟樂譜"
+          id="save-json-btn"
+          onclick="document.getElementById('export-btn').click()"
+          class="p-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+          title="儲存 (Ctrl+S)"
         >
           <svg
-            class="w-4 h-4 text-yellow-300"
+            class="w-5 h-5 text-white"
             fill="currentColor"
             viewBox="0 0 24 24"
           >
             <path
-              d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1 13H9.5v-1.25c0-.62-.5-1.12-1.12-1.12H8.25V11.5h3.25V15zM13 9V3.5L18.5 9H13z"
-            /></svg
-          >樂譜
+              d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"
+            />
+          </svg>
         </button>
         <button
           id="undo-btn"
@@ -129,30 +108,6 @@
               stroke-linejoin="round"
               stroke-width="2"
               d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"
-            />
-          </svg>
-        </button>
-        <button
-          id="preview-toggle"
-          class="p-2 rounded-lg bg-green-600 text-white"
-        >
-          <svg
-            class="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-            />
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
             />
           </svg>
         </button>
@@ -1094,7 +1049,7 @@
               pdfBoxAnnotations = data.pdfBoxAnnotations || [];
               document
                 .getElementById("sheet-music-btn")
-                .classList.remove("hidden");
+                ?.classList.remove("hidden");
               renderRegions();
               if (typeof window.updateSheetWindowUI === "function")
                 window.updateSheetWindowUI();
@@ -2505,7 +2460,7 @@
 
       // 產生播放速度按鈕
       const speedButtonsContainer = document.getElementById("speed-buttons");
-      [0.5, 0.8, 1.0, 2.0, 3.0, 4.0].forEach((s) => {
+      [0.5, 0.8, 1.0, 2.0, 3.0].forEach((s) => {
         const btn = document.createElement("button");
         btn.className =
           "speed-btn px-3 py-1.5 mx-0.5 rounded-lg text-sm font-bold transition-all border border-gray-600 bg-gray-700 text-gray-300 hover:bg-blue-500 hover:text-white";

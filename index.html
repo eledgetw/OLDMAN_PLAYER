@@ -2634,8 +2634,24 @@
           return;
         }
 
-        // 開啟新視窗
-        sheetWindow = window.open("", "_blank", "width=1100,height=800");
+        // 判斷是否為平板/行動裝置
+        const ua = navigator.userAgent;
+        const isTabletOrMobile =
+          /iPad|Android|iPhone|iPod/.test(ua) ||
+          (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+        // 判斷是否為 Chrome 瀏覽器 (排除 Edge、Opera 等 Chromium 核心衍生瀏覽器)
+        const isChrome =
+          /Chrome/.test(ua) &&
+          /Google Inc/.test(navigator.vendor) &&
+          !/Edg|OPR/.test(ua);
+
+        // 條件：非平板且使用 Chrome 開啟時另開新分頁 (不帶寬高參數)，其餘情況開啟獨立視窗
+        if (!isTabletOrMobile && isChrome) {
+          sheetWindow = window.open("", "_blank");
+        } else {
+          sheetWindow = window.open("", "_blank", "width=1100,height=800");
+        }
 
         // 寫入新視窗的 HTML 架構 (包含文字面板、方框面板與觸控手勢容器)
         sheetWindow.document.write(`

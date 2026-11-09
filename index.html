@@ -1375,8 +1375,16 @@
             }
 
             if (currentMode === "A") {
-              if (!e.shiftKey) clips.forEach((c) => (c.selected = false));
-              clip.selected = true;
+              if (!e.shiftKey) {
+                clips.forEach((c) => (c.selected = false));
+                clip.selected = true;
+              } else if (loopRegion) {
+                clips.forEach((c) => {
+                  if (c.start < loopRegion.end && c.end > loopRegion.start) {
+                    c.selected = true;
+                  }
+                });
+              }
               activeDragClip = clip;
               dragOffset = clickTime - clip.start;
               renderTimeline();
@@ -1874,6 +1882,11 @@
             break;
           case "b":
             setMode("B");
+            break;
+          case "m":
+            if (document.getElementById("merge-clips-btn")) {
+              document.getElementById("merge-clips-btn").click();
+            }
             break;
           case "shift":
             activeRegionIndex = -1;

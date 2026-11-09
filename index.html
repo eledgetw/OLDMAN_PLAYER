@@ -3024,8 +3024,9 @@
                         .sidebar.collapsed * { display: none !important; }
                     </style>
                     <div class="sidebar" id="sheet-regions-list">
-                        <div id="sidebar-top-container" style="margin-bottom:8px; display:flex; justify-content:center;">
+                        <div id="sidebar-top-container" style="margin-bottom:8px; display:flex; gap:4px; justify-content:center;">
                             <button class="btn toggle-sidebar-btn" style="width:100%; padding:4px 8px; font-size:12px; background:#4b5563; white-space:nowrap;" onclick="const s = document.getElementById('sheet-regions-list'); const resizer = document.getElementById('v-resizer'); const expandBtn = document.getElementById('expand-sidebar-btn'); s.classList.add('collapsed'); resizer.style.display = 'none'; if(expandBtn) expandBtn.style.display = 'flex';">收合 ▶</button>
+                            <button id="cross-region-btn" class="btn" style="width:100%; padding:4px 8px; font-size:12px; background:#4b5563; white-space:nowrap;" title="點擊啟用跨區多選">跨區</button>
                         </div>
                     </div>
                     <!-- 收合後浮動在右上角的展開按鈕 -->
@@ -6111,6 +6112,22 @@
         const list = sheetWindow.document.getElementById("sheet-regions-list");
         if (!list) return;
 
+        if (typeof sheetWindow.isCrossRegionMode === "undefined") {
+          sheetWindow.isCrossRegionMode = false;
+          sheetWindow.crossRegionSelected = [];
+          const crossBtn = sheetWindow.document.getElementById("cross-region-btn");
+          if (crossBtn) {
+            crossBtn.addEventListener("click", () => {
+              sheetWindow.isCrossRegionMode = !sheetWindow.isCrossRegionMode;
+              crossBtn.style.background = sheetWindow.isCrossRegionMode ? "#2563eb" : "#4b5563";
+              if (!sheetWindow.isCrossRegionMode) {
+                sheetWindow.crossRegionSelected = [];
+                window.updateSheetWindowUI();
+              }
+            });
+          }
+        }
+
         const topContainer = sheetWindow.document.getElementById("sidebar-top-container");
         list.innerHTML = "";
         if (topContainer) list.appendChild(topContainer);
@@ -6121,9 +6138,18 @@
           btn.draggable = true;
 
           const isPlaced = pdfAnchors.some((a) => a.regionName === reg.name);
-          if (isPlaced) {
+          const isSelectedCross = sheetWindow.crossRegionSelected && sheetWindow.crossRegionSelected.includes(reg.name);
+          
+          if (isSelectedCross) {
+            btn.style.backgroundColor = "#3b82f6";
+            btn.style.borderColor = "#60a5fa";
+            btn.style.boxShadow = "0 0 8px rgba(59,130,246,0.8)";
+          } else if (isPlaced) {
             btn.style.backgroundColor = "#059669";
             btn.style.borderColor = "#34d399";
+          }
+
+          if (isPlaced) {
             btn.innerHTML = `<span style="pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1; min-width: 0; margin-right: 4px;">✔ ${reg.name}</span> <div style="display:flex; align-items:center; flex-shrink: 0;"><span class="remove-anchor" style="cursor:pointer; background:rgba(255,255,255,0.25); border-radius:50%; width:16px; height:16px; display:inline-flex; align-items:center; justify-content:center; font-weight:bold; font-size:10px;" title="取消錨點">✕</span></div>`;
           } else {
             btn.innerHTML = `<span style="pointer-events:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1; min-width: 0;">♫ ${reg.name}</span>`;
@@ -6155,6 +6181,37 @@
               (r) => r.name === reg.name,
             );
             if (regIndex !== -1) {
+              if (sheetWindow.isCrossRegionMode) {
+                const idx = sheetWindow.crossRegionSelected.indexOf(reg.name);
+                if (idx > -1) {
+                  sheetWindow.crossRegionSelected.splice(idx, 1);
+                } else {
+                  sheetWindow.crossRegionSelected.push(reg.name);
+                }
+                
+                if (sheetWindow.crossRegionSelected.length > 0) {
+                  const selectedRegs = customRegions.filter(r => sheetWindow.crossRegionSelected.includes(r.name));
+                  const minStart = Math.min(...selectedRegs.map(r => parseFloat(r.start)));
+                  const maxEnd = Math.max(...selectedRegs.map(r => parseFloat(r.end)));
+                  
+                  loopRegion = { start: minStart, end: maxEnd };
+                  savedPlayTime = minStart;
+                  video.currentTime = minStart;
+                  
+                  activeRegionIndex = customRegions.findIndex(r => parseFloat(r.start) === minStart);
+                  
+                  renderTimeline();
+                  renderRegions();
+                } else {
+                  loopRegion = null;
+                  activeRegionIndex = -1;
+                  renderTimeline();
+                  renderRegions();
+                }
+                window.updateSheetWindowUI();
+                return;
+              }
+
               activeRegionIndex = regIndex;
               savedPlayTime = parseFloat(customRegions[regIndex].start);
               video.currentTime = parseFloat(customRegions[regIndex].start);
